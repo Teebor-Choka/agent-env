@@ -35,44 +35,60 @@
     let
       inherit (nixpkgs) lib;
 
-      # headroom-ai ships no macOS wheel (confirmed: PyPI only publishes
-      # manylinux_2_28_x86_64 for 0.41.0) -- this flake only ever needs to run on the
-      # x86_64-linux dev microVM guests that actually install these tools, so there is
-      # no multi-system matrix to maintain here.
-      system = "x86_64-linux";
-      pkgs = nixpkgs.legacyPackages.${system};
+      # headroom-ai and its fastembed/onnxruntime chain ship no macOS wheel (confirmed:
+      # PyPI only publishes manylinux_2_28_{x86_64,aarch64} for 0.41.0) -- this flake
+      # only ever needs to run on the Linux dev microVM guests that actually install
+      # these tools, which are aarch64-linux on this Apple Silicon host (the Mac's
+      # vfkit/Virtualization.framework guests) with x86_64-linux kept too since it is a
+      # real, independently reachable builder (ws01).
+      systems = [
+        "aarch64-linux"
+        "x86_64-linux"
+      ];
 
-      workspace = uv2nix.lib.workspace.loadWorkspace { workspaceRoot = ./.; };
+      forEachSystem = lib.genAttrs systems;
 
-      overlay = workspace.mkPyprojectOverlay {
-        sourcePreference = "wheel";
-      };
+      mkAgenticTools =
+        system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
 
-      pythonSet =
-        (pkgs.callPackage pyproject-nix.build.packages {
-          python = pkgs.python312;
-        }).overrideScope
-          (
-            lib.composeManyExtensions [
-              pyproject-build-systems.overlays.wheel
-              overlay
-            ]
-          );
+          workspace = uv2nix.lib.workspace.loadWorkspace { workspaceRoot = ./.; };
 
-      # One combined environment carrying both CLIs on PATH (headroom, cce, and their
-      # own entry-point scripts) -- both tools are always installed together on every
-      # guest that wants either (see agentic.nix in the consuming flake), so there is no
-      # need to split this into a multi-member uv workspace for independent packaging.
-      agenticTools = pythonSet.mkVirtualEnv "agentic-tools-env" workspace.deps.default;
+          overlay = workspace.mkPyprojectOverlay {
+            sourcePreference = "wheel";
+          };
+
+          pythonSet =
+            (pkgs.callPackage pyproject-nix.build.packages {
+              python = pkgs.python312;
+            }).overrideScope
+              (
+                lib.composeManyExtensions [
+                  pyproject-build-systems.overlays.wheel
+                  overlay
+                ]
+              );
+        in
+        # One combined environment carrying both CLIs on PATH (headroom, cce, and their
+        # own entry-point scripts) -- both tools are always installed together on every
+        # guest that wants either (see agentic.nix in the consuming flake), so there is
+        # no need to split this into a multi-member uv workspace for independent
+        # packaging.
+        pythonSet.mkVirtualEnv "agentic-tools-env" workspace.deps.default;
+
+      agenticToolsBySystem = forEachSystem mkAgenticTools;
     in
     {
-      packages.${system} = {
-        default = agenticTools;
-        agentic-tools = agenticTools;
-      };
+      packages = forEachSystem (system: {
+        default = agenticToolsBySystem.${system};
+        agentic-tools = agenticToolsBySystem.${system};
+      });
 
-      checks.${system}.build = agenticTools;
+      checks = forEachSystem (system: {
+        build = agenticToolsBySystem.${system};
+      });
 
-      formatter.${system} = pkgs.nixfmt;
+      formatter = forEachSystem (system: nixpkgs.legacyPackages.${system}.nixfmt);
     };
 }

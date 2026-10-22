@@ -24,7 +24,7 @@ ADRs below cover the decisions that matter.
 
 | Path | Purpose |
 |------|---------|
-| `flake.nix` | Loads the uv workspace, builds the python package set via uv2nix + pyproject-build-systems, exposes `packages.x86_64-linux.{default,agentic-tools}` |
+| `flake.nix` | Loads the uv workspace, builds the python package set via uv2nix + pyproject-build-systems, exposes `packages.{aarch64-linux,x86_64-linux}.{default,agentic-tools}` |
 | `pyproject.toml` | The only "dependencies" this project has: the two pinned package versions |
 | `uv.lock` | Full resolved dependency tree (118 packages), regenerated with `uv lock` |
 | `.github/workflows/ci.yml` | `nix flake check` + `nix build` + `nix fmt --check` |
@@ -40,8 +40,8 @@ newer nixpkgs than a stable branch carries).
 ## Build / run
 
 ```sh
-nix build .#packages.x86_64-linux.default   # x86_64-linux only -- see docs/decisions/x86-64-linux-only.md
-nix flake check
+nix build .#packages.x86_64-linux.default   # or aarch64-linux -- see docs/decisions/linux-only-no-macos.md
+nix flake check --all-systems
 ```
 
 The output is one environment (`agentic-tools`) with both `headroom` and `cce` on `PATH` — see
@@ -61,4 +61,4 @@ flowchart LR
 ## Decisions
 
 See [`decisions/`](decisions/README.md) for the ADRs: why uv2nix over a hand-rolled fetch
-derivation, why `x86_64-linux` only, why one combined environment instead of per-tool packages.
+derivation, why Linux only, why one combined environment instead of per-tool packages.

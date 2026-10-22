@@ -13,9 +13,9 @@ embedding model) and, once fixed with offline caching, still carried real packag
 (platform-tag mismatches, non-reproducible local caches). This flake replaces that with ordinary
 Nix packages: build once, substitute everywhere, zero runtime fetch.
 
-`x86_64-linux` only — `headroom-ai` ships no macOS wheel (PyPI only publishes
-`manylinux_2_28_x86_64` for 0.41.0), and this flake only ever needs to run where the guests that
-install these tools actually run.
+Linux only (`aarch64-linux` + `x86_64-linux`) — `headroom-ai` ships no macOS wheel (PyPI only
+publishes `manylinux_2_28_{x86_64,aarch64}` for 0.41.0), and this flake only ever needs to run
+where the guests that install these tools actually run.
 
 ## Usage
 
@@ -45,10 +45,10 @@ are always installed together wherever either is needed, so there is no per-tool
 ## Development
 
 ```sh
-nix flake check   # builds the package, runs nix fmt --check
-nix build         # build pkgs.agentic-tools for x86_64-linux
+nix flake check --all-systems           # builds the package, runs nix fmt --check
+nix build .#packages.x86_64-linux.default   # or aarch64-linux
 ```
 
 See [`docs/overview.md`](docs/overview.md) for the full project writeup and
 [`docs/decisions/`](docs/decisions/) for the ADRs behind the design choices here (uv2nix over a
-hand-rolled FOD, why `x86_64-linux` only, why one combined environment).
+hand-rolled FOD, why Linux only, why one combined environment).

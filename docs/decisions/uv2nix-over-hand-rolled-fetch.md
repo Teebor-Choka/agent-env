@@ -21,8 +21,8 @@ hand-maintained manylinux platform-tag matching) while staying fully Nix-native 
 `uvx`/`pip` invocation anywhere, not even an offline resolve step.
 
 **Consequences.** Version bumps go through the normal `uv lock` + commit workflow instead of
-re-running a fetch and re-pinning a hash by hand. Packaging is scoped to `x86_64-linux` (see
-`x86-64-linux-only.md`) since that is the only platform either tool actually needs to run on.
+re-running a fetch and re-pinning a hash by hand. Packaging is scoped to Linux (see
+`linux-only-no-macos.md`) since that is the only platform either tool actually needs to run on.
 
 [^pip-fod]: A second attempt used plain `pip download` into a flat directory instead of uv's
     internal cache — this WAS reproducible (PyPI wheel files are themselves content-addressed),
