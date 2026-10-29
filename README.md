@@ -1,15 +1,14 @@
 # agentic-pkgs
 
-Nix packaging for agentic-tooling PyPI packages with no nixpkgs equivalent: [headroom-ai](https://pypi.org/project/headroom-ai/)
-and [code-context-engine](https://pypi.org/project/code-context-engine/). Built with
+Nix packaging for [headroom-ai](https://pypi.org/project/headroom-ai/), an agentic-tooling PyPI package
+with no nixpkgs equivalent. Built with
 [uv2nix](https://github.com/pyproject-nix/uv2nix) from a pinned `pyproject.toml` + `uv.lock`, so
-both ship as real `buildPythonPackage`-based derivations instead of a runtime `uvx` fetch.
+it ships as real `buildPythonPackage`-based derivations instead of a runtime `uvx` fetch.
 
 ## Why this exists
 
-Both tools were originally consumed via `uvx --from <pkg> ...` at guest-boot time in a personal
-microVM fleet. That meant every fresh sandbox paid a cold network fetch (package wheels, the
-embedding model) and, once fixed with offline caching, still carried real packaging risk
+The tool was originally consumed via `uvx --from <pkg> ...` at guest-boot time in a personal
+microVM fleet. That meant every fresh sandbox paid a cold network fetch (package wheels) and, once fixed with offline caching, still carried real packaging risk
 (platform-tag mismatches, non-reproducible local caches). This flake replaces that with ordinary
 Nix packages: build once, substitute everywhere, zero runtime fetch.
 
@@ -32,8 +31,7 @@ final: prev: {
 }
 ```
 
-`pkgs.agentic-tools` is one environment carrying both `headroom` and `cce` on `PATH` — both tools
-are always installed together wherever either is needed, so there is no per-tool split.
+`pkgs.agentic-tools` is one environment carrying `headroom` on `PATH`.
 
 ## Updating
 
@@ -51,4 +49,4 @@ nix build .#packages.x86_64-linux.default   # or aarch64-linux
 
 See [`docs/overview.md`](docs/overview.md) for the full project writeup and
 [`docs/decisions/`](docs/decisions/) for the ADRs behind the design choices here (uv2nix over a
-hand-rolled FOD, why Linux only, why one combined environment).
+hand-rolled FOD, why Linux only, why code-context-engine was dropped).

@@ -1,6 +1,6 @@
 ---
 title: One combined environment, not a package per tool
-status: accepted
+status: superseded by drop-code-context-engine.md
 project: agentic-pkgs
 updated: 2026-10-21
 ---

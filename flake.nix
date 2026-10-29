@@ -1,5 +1,5 @@
 {
-  description = "Nix packaging for agentic-tooling PyPI packages with no nixpkgs equivalent (headroom-ai, code-context-engine)";
+  description = "Nix packaging for agentic-tooling PyPI packages with no nixpkgs equivalent (headroom-ai)";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
@@ -35,7 +35,7 @@
     let
       inherit (nixpkgs) lib;
 
-      # headroom-ai and its fastembed/onnxruntime chain ship no macOS wheel (confirmed:
+      # headroom-ai and its onnxruntime chain ship no macOS wheel (confirmed:
       # PyPI only publishes manylinux_2_28_{x86_64,aarch64} for 0.41.0) -- this flake
       # only ever needs to run on the Linux dev microVM guests that actually install
       # these tools, which are aarch64-linux on this Apple Silicon host (the Mac's
@@ -70,11 +70,8 @@
                 ]
               );
         in
-        # One combined environment carrying both CLIs on PATH (headroom, cce, and their
-        # own entry-point scripts) -- both tools are always installed together on every
-        # guest that wants either (see agentic.nix in the consuming flake), so there is
-        # no need to split this into a multi-member uv workspace for independent
-        # packaging.
+        # One environment carrying headroom and its entry-point scripts on PATH. The name stays
+        # `agentic-tools` so the consuming flake's overlay needs no change.
         pythonSet.mkVirtualEnv "agentic-tools-env" workspace.deps.default;
 
       agenticToolsBySystem = forEachSystem mkAgenticTools;
