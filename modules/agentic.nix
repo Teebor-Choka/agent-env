@@ -113,6 +113,34 @@ let
     ];
   };
 
+  # Headroom proxy settings shared by the systemd unit and the launchd agent.
+  # --anthropic-pre-upstream-concurrency auto-detects to max(2, min(8, cpu_count)), as low as 8
+  # concurrent requests in the parse/compress/upstream-connect stage, the bottleneck for many
+  # parallel sessions and subagents. --limit-concurrency and --max-connections default to 1000 and
+  # 500. --no-rate-limit drops the default 60 requests per minute throttle (Anthropic enforces its
+  # own limits). --no-cache drops the semantic response cache, which could answer a similar prompt
+  # with a stale reply. --no-subscription-tracking stops the 300 s usage poll that only feeds /stats.
+  headroomArgs = [
+    "--backend"
+    "anthropic"
+    "--port"
+    "8787"
+    "--limit-concurrency"
+    "2000"
+    "--max-connections"
+    "1000"
+    "--anthropic-pre-upstream-concurrency"
+    "256"
+    "--no-rate-limit"
+    "--no-cache"
+    "--no-subscription-tracking"
+  ];
+  # No anonymous usage beacon, no daily PyPI update check (the version is pinned).
+  headroomEnv = {
+    HEADROOM_BEACON = "off";
+    HEADROOM_UPDATE_CHECK = "off";
+  };
+
   # Force-index wrapper for codebase-memory-mcp: harnesses without a Claude-Code-style
   # SessionStart hook (opencode, codex, omp) never trigger dotclaude's git-index hook, so the
   # graph would stay empty until someone runs index_repository by hand. Kick off an incremental
@@ -574,19 +602,14 @@ in
                         User = user;
                         Restart = "on-failure";
                         RestartSec = 3;
-                        # --anthropic-pre-upstream-concurrency auto-detects to max(2, min(8, cpu_count)) —
-                        # as low as 8 concurrent requests in the parse/compress/upstream-connect stage,
-                        # the real bottleneck for many parallel sessions/subagents (same fix as the
-                        # darwin launchd unit below). --limit-concurrency/--max-connections default to
-                        # 1000/500 already. headroom comes from pkgs.agentic-tools (nix-packaged,
-                        # Teebor-Choka/agent-env) rather than a per-boot `uvx --from` fetch.
-                        ExecStart = "${pkgs.agentic-tools}/bin/headroom proxy --backend anthropic --port 8787 --limit-concurrency 2000 --max-connections 1000 --anthropic-pre-upstream-concurrency 256";
+                        # headroom comes from pkgs.agentic-tools (nix-packaged, Teebor-Choka/agent-env)
+                        # rather than a per-boot `uvx --from` fetch.
+                        ExecStart = "${pkgs.agentic-tools}/bin/headroom proxy ${lib.concatStringsSep " " headroomArgs}";
                         Environment = [
                           "HOME=/home/${user}"
                           "PATH=/run/current-system/sw/bin"
-                          # No anonymous usage beacon from the proxy.
-                          "HEADROOM_BEACON=off"
-                        ];
+                        ]
+                        ++ lib.mapAttrsToList (name: value: "${name}=${value}") headroomEnv;
                       };
                     };
                   }
@@ -611,25 +634,15 @@ in
                           "headroom-ai[proxy]==0.41.0"
                           "headroom"
                           "proxy"
-                          "--backend"
-                          "anthropic"
-                          "--port"
-                          "8787"
-                          "--limit-concurrency"
-                          "2000"
-                          "--max-connections"
-                          "1000"
-                          "--anthropic-pre-upstream-concurrency"
-                          "256"
-                        ];
+                        ]
+                        ++ headroomArgs;
                         KeepAlive = true;
                         RunAtLoad = true;
                         EnvironmentVariables = {
                           HOME = "/Users/${user}";
                           UV_MANAGED_PYTHON = "1";
-                          # No anonymous usage beacon from the proxy.
-                          HEADROOM_BEACON = "off";
-                        };
+                        }
+                        // headroomEnv;
                         StandardOutPath = "/Users/${user}/Library/Logs/headroom/proxy-anthropic.log";
                         StandardErrorPath = "/Users/${user}/Library/Logs/headroom/proxy-anthropic.log";
                       };
