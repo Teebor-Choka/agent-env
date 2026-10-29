@@ -12,6 +12,7 @@ built the way it is.
 |------|---------|
 | `flake.nix` | uv2nix wiring: loads the workspace, builds the python package set, exposes `packages.{aarch64-linux,x86_64-linux}.{default,agentic-tools}` |
 | `modules/agentic.nix` | The environment module, exported as `nixosModules.agentic` and `darwinModules.agentic` (platform fixed per export) |
+| `flake.nix` `nixosModules.sandbox` | Self-contained sandbox module (bundles home-manager and a user) for builders that supply only a bare guest, such as `sandy run --flake` |
 | `modules/home/` | home-manager modules: `home.agentPlugins`, `home.skillLink`, `home.swePlugin` |
 | `tests/` | `agent-plugins-suite.sh` and its fixtures, run as `checks.<system>.agent-plugins-lib` |
 | `pyproject.toml` | Pins the package version (the only "dependency" this project has) |

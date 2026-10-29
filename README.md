@@ -36,6 +36,10 @@ agentic = {
 };
 ```
 
+`nixosModules.sandbox` is the same environment made self-contained (home-manager, a user, compression
+on): `sandy run --flake github:Teebor-Choka/agent-env --kind nixos-module --attr sandbox -- <cmd>`
+boots it in a sandy VM. Override any `agentic.*` option as usual.
+
 The module has no VM knowledge. It adds `overlays.default` (`agentic-tools`, `codebase-memory-mcp`,
 `omp`) and the home-manager modules `home.agentPlugins`, `home.skillLink` and `home.swePlugin`.
 Where session state and staged host extensions live is `agentic.sessionsDir` and

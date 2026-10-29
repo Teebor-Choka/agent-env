@@ -7,6 +7,13 @@
     # on a stable nixpkgs follows its own unstable tree here.
     nixpkgs-unstable.url = "github:nixos/nixpkgs/nixos-unstable";
 
+    # Only for nixosModules.sandbox, which bundles the home-manager NixOS module so a sandbox
+    # builder that does not ship it (sandy's guest wrapper) can still boot the environment.
+    home-manager = {
+      url = "github:nix-community/home-manager";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     pyproject-nix = {
       url = "github:pyproject-nix/pyproject.nix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -31,6 +38,7 @@
       self,
       nixpkgs,
       nixpkgs-unstable,
+      home-manager,
       pyproject-nix,
       uv2nix,
       pyproject-build-systems,
@@ -104,6 +112,37 @@
         inherit self;
         isLinuxHost = true;
       };
+      # A ready-to-boot environment for builders that supply only a bare NixOS guest, such as
+      # `sandy run --flake <this flake> --kind nixos-module --attr sandbox`: bundles home-manager,
+      # a user, and the environment with compression on. Every agentic.* default is overridable.
+      nixosModules.sandbox =
+        { lib, ... }:
+        {
+          imports = [
+            self.nixosModules.agentic
+            home-manager.nixosModules.home-manager
+          ];
+          users.users.agent = {
+            isNormalUser = true;
+            home = "/home/agent";
+          };
+          # claude-code is unfree; allow it alone, not everything.
+          nixpkgs.config.allowUnfreePredicate = lib.mkDefault (pkg: lib.getName pkg == "claude-code");
+          home-manager.useGlobalPkgs = true;
+          home-manager.users.agent.home.stateVersion = lib.mkDefault "24.05";
+          agentic = {
+            enable = lib.mkDefault true;
+            user = lib.mkDefault "agent";
+            tools = lib.mkDefault [
+              "claude"
+              "opencode"
+              "codex"
+            ];
+            sessions = lib.mkDefault false;
+            extensions = lib.mkDefault "none";
+            compression = lib.mkDefault true;
+          };
+        };
       darwinModules.agentic = import ./modules/agentic.nix {
         inherit self;
         isLinuxHost = false;
@@ -123,6 +162,30 @@
         in
         {
           build = agenticToolsBySystem.${system};
+
+          # nixosModules.sandbox must evaluate into a complete NixOS system. Forcing the system's
+          # drvPath at eval time fails the check on any option, assertion or overlay error; the
+          # live boot (sandy) is run by hand, see README.
+          sandbox-eval =
+            let
+              system' = nixpkgs.lib.nixosSystem {
+                modules = [
+                  self.nixosModules.sandbox
+                  {
+                    nixpkgs.hostPlatform = system;
+                    boot.loader.grub.enable = false;
+                    fileSystems."/" = {
+                      device = "/dev/null";
+                      fsType = "ext4";
+                    };
+                    system.stateVersion = "24.05";
+                  }
+                ];
+              };
+            in
+            pkgs.writeText "sandbox-eval" (
+              builtins.unsafeDiscardStringContext system'.config.system.build.toplevel.drvPath
+            );
 
           # Unit test for the plugin marketplace normalizer: evaluated here (the sandbox has no nix),
           # then compared by the suite's jq checks. See tests/agent-plugins-suite.sh.
