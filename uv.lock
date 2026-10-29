@@ -14,7 +14,7 @@ resolution-markers = [
 ]
 
 [[package]]
-name = "agentic-pkgs"
+name = "agent-env"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

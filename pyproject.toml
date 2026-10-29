@@ -1,5 +1,5 @@
 [project]
-name = "agentic-pkgs"
+name = "agent-env"
 version = "0.1.0"
 description = "Nix packaging for agentic-tooling PyPI packages with no nixpkgs equivalent"
 requires-python = ">=3.12"

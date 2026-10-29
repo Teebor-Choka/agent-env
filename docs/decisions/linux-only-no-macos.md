@@ -1,8 +1,8 @@
 ---
 title: Linux only, no macOS output
 status: accepted
-project: agentic-pkgs
-updated: 2026-10-22
+project: agent-env
+updated: 2026-10-29
 ---
 
 **Context.** `headroom-ai` publishes no macOS wheel at all for 0.41.0 — PyPI only lists
@@ -16,6 +16,10 @@ launchd agent instead, unaffected by this packaging.[^original-scope]
 **Decision.** Expose `packages.{aarch64-linux,x86_64-linux}`, built via a small system-matrix
 helper (`forEachSystem`/`mkAgenticTools` in `flake.nix`) rather than a hardcoded single system.
 No macOS entry.
+
+**Scope.** This covers `packages` only. The modules (`nixosModules.agentic`,
+`darwinModules.agentic`) evaluate on both platforms; the darwin one runs headroom through `uvx`.
+See [environment-modules](environment-modules.md).
 
 **Consequences.** `nix build`/`nix flake check` need an explicit `.#packages.<system>.default`
 or a Linux builder for each target system; a bare `nix build` on a non-Linux machine correctly

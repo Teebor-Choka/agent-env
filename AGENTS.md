@@ -1,7 +1,8 @@
 # AGENTS.md
 
-Nix packaging (via [uv2nix](https://github.com/pyproject-nix/uv2nix)) for the PyPI tool
-`headroom-ai`, which has no nixpkgs equivalent. See [`docs/overview.md`](docs/overview.md)
+The agentic environment for agent sandboxes: Nix packaging (via
+[uv2nix](https://github.com/pyproject-nix/uv2nix)) for the PyPI tool `headroom-ai`, plus the
+NixOS and nix-darwin modules that configure the harnesses around it. See [`docs/overview.md`](docs/overview.md)
 for the full writeup and [`docs/decisions/`](docs/decisions/) for why this exists and why it is
 built the way it is.
 
@@ -10,6 +11,9 @@ built the way it is.
 | Path | Purpose |
 |------|---------|
 | `flake.nix` | uv2nix wiring: loads the workspace, builds the python package set, exposes `packages.{aarch64-linux,x86_64-linux}.{default,agentic-tools}` |
+| `modules/agentic.nix` | The environment module, exported as `nixosModules.agentic` and `darwinModules.agentic` (platform fixed per export) |
+| `modules/home/` | home-manager modules: `home.agentPlugins`, `home.skillLink`, `home.swePlugin` |
+| `tests/` | `agent-plugins-suite.sh` and its fixtures, run as `checks.<system>.agent-plugins-lib` |
 | `pyproject.toml` | Pins the package version (the only "dependency" this project has) |
 | `uv.lock` | Full resolved dependency tree, regenerated with `uv lock` |
 | `.github/workflows/ci.yml` | `nix flake check` + `nix build` + `nix fmt --check` on every push/PR |
@@ -33,6 +37,8 @@ nix fmt
 ## Conventions
 
 - Conventional commits.
-- Linux only, deliberately (`aarch64-linux` + `x86_64-linux`) — see
-  `docs/decisions/linux-only-no-macos.md`.
+- Packages are Linux only, deliberately (`aarch64-linux` + `x86_64-linux`) — see
+  `docs/decisions/linux-only-no-macos.md`. The modules evaluate on darwin too.
+- The modules know nothing about how a sandbox is built (no microvm, share or trust options); see
+  `docs/decisions/environment-modules.md`.
 - One `agentic-tools` environment (headroom only since `docs/decisions/drop-code-context-engine.md`).
