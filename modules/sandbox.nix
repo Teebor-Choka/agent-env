@@ -156,6 +156,9 @@ in
       wants = [ "network-online.target" ];
       environment = {
         HOME = "/var/lib/headroom";
+        # LiteLLM fetches its model-cost map from GitHub at start; a sandbox may have no network and
+        # pays the connect timeout on every boot. This uses the map bundled with the pinned version.
+        LITELLM_LOCAL_MODEL_COST_MAP = "True";
       }
       // headroomEnv;
       serviceConfig = {

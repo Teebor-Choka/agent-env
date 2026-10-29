@@ -43,7 +43,10 @@ service. Each harness's config sits in the home as plain, user-owned, writable f
 code-graph MCP server registered, telemetry and update checks off), written once with no home-manager. No
 model or provider is set. sandy runs the job as root, so run it as the user:
 `sandy run --flake github:Teebor-Choka/agent-env --kind nixos-module --attr sandbox -- runuser -u user -- <cmd>`.
-The live boot test is `nix run .#test-sandbox` (needs sandy and a hypervisor; not in CI).
+Give the guest at least 2048 MiB (`sandy run --mem 2048`): the proxy alone holds about 240 MB and sandy's 512 MiB default
+lets the kernel OOM-kill it as soon as a harness runs. The proxy also sets `LITELLM_LOCAL_MODEL_COST_MAP`, so a
+guest without network does not wait on a GitHub fetch at start. The live boot test is `nix run .#test-sandbox`
+(needs sandy and a hypervisor; boots the default sandbox and an all-tools one; not in CI; `SANDBOX_MEM` overrides the memory).
 
 The module has no VM knowledge. It adds `overlays.default` (`agentic-tools`, `codebase-memory-mcp`,
 `omp`) and the home-manager modules `home.agentPlugins`, `home.skillLink` and `home.swePlugin`.
