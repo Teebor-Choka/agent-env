@@ -3,6 +3,9 @@
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+    # Source of the packages the agentic overlay grafts in (codebase-memory-mcp, omp). A consumer
+    # on a stable nixpkgs follows its own unstable tree here.
+    nixpkgs-unstable.url = "github:nixos/nixpkgs/nixos-unstable";
 
     pyproject-nix = {
       url = "github:pyproject-nix/pyproject.nix";
@@ -27,6 +30,7 @@
     {
       self,
       nixpkgs,
+      nixpkgs-unstable,
       pyproject-nix,
       uv2nix,
       pyproject-build-systems,
@@ -75,16 +79,80 @@
         pythonSet.mkVirtualEnv "agentic-tools-env" workspace.deps.default;
 
       agenticToolsBySystem = forEachSystem mkAgenticTools;
+
+      # Packages every agentic guest or host needs, keyed to prev's platform so one overlay serves the
+      # darwin host and the linux guests. agentic-tools is lazily bound: it exists for linux only, and
+      # the darwin host runs headroom through uvx instead.
+      overlay =
+        _final: prev:
+        let
+          system = prev.stdenv.hostPlatform.system;
+          unstable = nixpkgs-unstable.legacyPackages.${system};
+        in
+        {
+          # C11 MCP server that indexes a codebase into a knowledge graph.
+          inherit (unstable) codebase-memory-mcp omp;
+          agentic-tools = self.packages.${system}.agentic-tools;
+        };
     in
     {
+      overlays.default = overlay;
+
+      # The agentic environment (modules/agentic.nix), once per platform: the option trees for
+      # services (systemd vs launchd) and shell init differ, so the platform is fixed per export.
+      nixosModules.agentic = import ./modules/agentic.nix {
+        inherit self;
+        isLinuxHost = true;
+      };
+      darwinModules.agentic = import ./modules/agentic.nix {
+        inherit self;
+        isLinuxHost = false;
+      };
+      # home.agentPlugins, home.skillLink, home.swePlugin. Also registered by the modules above.
+      homeModules.agentic = ./modules/home;
+
       packages = forEachSystem (system: {
         default = agenticToolsBySystem.${system};
         agentic-tools = agenticToolsBySystem.${system};
       });
 
-      checks = forEachSystem (system: {
-        build = agenticToolsBySystem.${system};
-      });
+      checks = forEachSystem (
+        system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+        in
+        {
+          build = agenticToolsBySystem.${system};
+
+          # Unit test for the plugin marketplace normalizer: evaluated here (the sandbox has no nix),
+          # then compared by the suite's jq checks. See tests/agent-plugins-suite.sh.
+          agent-plugins-lib =
+            let
+              fix = "${./tests/fixtures/agent-plugins}";
+              ps = (import ./modules/home/agent-plugins-lib.nix { inherit lib; }).normalize {
+                src = fix;
+                exclude = [ "skipme" ];
+              };
+              records = pkgs.writeText "agent-plugins.json" (
+                builtins.toJSON {
+                  names = map (p: p.name) ps;
+                  byName = lib.listToAttrs (map (p: lib.nameValuePair p.name p) ps);
+                }
+              );
+            in
+            pkgs.runCommand "agent-plugins-lib"
+              {
+                nativeBuildInputs = [
+                  pkgs.bash
+                  pkgs.jq
+                ];
+              }
+              ''
+                bash ${./tests/agent-plugins-suite.sh} ${records} ${fix}
+                touch "$out"
+              '';
+        }
+      );
 
       formatter = forEachSystem (system: nixpkgs.legacyPackages.${system}.nixfmt);
     };

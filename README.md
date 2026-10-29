@@ -1,7 +1,7 @@
 # agentic-pkgs
 
-Nix packaging for [headroom-ai](https://pypi.org/project/headroom-ai/), an agentic-tooling PyPI package
-with no nixpkgs equivalent. Built with
+The agentic environment for an agent sandbox, as Nix: the [headroom-ai](https://pypi.org/project/headroom-ai/) package, plus the NixOS and nix-darwin modules that set up
+the harnesses (claude-code, opencode, codex, omp) around it. headroom has no nixpkgs equivalent; it is built with
 [uv2nix](https://github.com/pyproject-nix/uv2nix) from a pinned `pyproject.toml` + `uv.lock`, so
 it ships as real `buildPythonPackage`-based derivations instead of a runtime `uvx` fetch.
 
@@ -21,15 +21,26 @@ where the guests that install these tools actually run.
 ```nix
 # in a consuming flake
 agentic-pkgs.url = "github:Teebor-Choka/agentic-pkgs";
-agentic-pkgs.inputs.nixpkgs.follows = "nixpkgs"; # or nixpkgs-unstable
+agentic-pkgs.inputs.nixpkgs.follows = "nixpkgs";
+agentic-pkgs.inputs.nixpkgs-unstable.follows = "nixpkgs-unstable";   # source of codebase-memory-mcp and omp
 ```
 
 ```nix
-# in an overlay
-final: prev: {
-  agentic-tools = inputs.agentic-pkgs.packages.${prev.stdenv.hostPlatform.system}.agentic-tools;
-}
+# a NixOS guest, container or workstation (needs the home-manager NixOS module)
+imports = [ inputs.agentic-pkgs.nixosModules.agentic ];   # darwinModules.agentic on nix-darwin
+agentic = {
+  enable = true;
+  user = "me";
+  tools = [ "claude" "opencode" "codex" ];
+  compression = true;   # local headroom proxy; Claude is routed through it when it listens
+};
 ```
+
+The module has no VM knowledge. It adds `overlays.default` (`agentic-tools`, `codebase-memory-mcp`,
+`omp`) and the home-manager modules `home.agentPlugins`, `home.skillLink` and `home.swePlugin`.
+Where session state and staged host extensions live is `agentic.sessionsDir` and
+`agentic.extensionsDir`; whoever builds the sandbox provides them. `agentic.extensionsPackage`
+feeds `extensions = "baked"`.
 
 `pkgs.agentic-tools` is one environment carrying `headroom` on `PATH`.
 
