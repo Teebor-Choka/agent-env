@@ -217,6 +217,20 @@
         }
       );
 
+      # Live boot test for nixosModules.sandbox (needs sandy, vfkit or qemu; not run in CI).
+      apps = lib.genAttrs (systems ++ [ "aarch64-darwin" ]) (
+        system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+        in
+        {
+          test-sandbox = {
+            type = "app";
+            program = "${pkgs.writeShellScript "test-sandbox" (builtins.readFile ./tests/sandbox-boot.sh)}";
+          };
+        }
+      );
+
       formatter = forEachSystem (system: nixpkgs.legacyPackages.${system}.nixfmt);
     };
 }
