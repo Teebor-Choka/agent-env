@@ -1,4 +1,4 @@
-# agentic-pkgs
+# agent-env
 
 The agentic environment for an agent sandbox, as Nix: the [headroom-ai](https://pypi.org/project/headroom-ai/) package, plus the NixOS and nix-darwin modules that set up
 the harnesses (claude-code, opencode, codex, omp) around it. headroom has no nixpkgs equivalent; it is built with
@@ -20,14 +20,14 @@ where the guests that install these tools actually run.
 
 ```nix
 # in a consuming flake
-agentic-pkgs.url = "github:Teebor-Choka/agentic-pkgs";
-agentic-pkgs.inputs.nixpkgs.follows = "nixpkgs";
-agentic-pkgs.inputs.nixpkgs-unstable.follows = "nixpkgs-unstable";   # source of codebase-memory-mcp and omp
+agent-env.url = "github:Teebor-Choka/agent-env";
+agent-env.inputs.nixpkgs.follows = "nixpkgs";
+agent-env.inputs.nixpkgs-unstable.follows = "nixpkgs-unstable";   # source of codebase-memory-mcp and omp
 ```
 
 ```nix
 # a NixOS guest, container or workstation (needs the home-manager NixOS module)
-imports = [ inputs.agentic-pkgs.nixosModules.agentic ];   # darwinModules.agentic on nix-darwin
+imports = [ inputs.agent-env.nixosModules.agentic ];   # darwinModules.agentic on nix-darwin
 agentic = {
   enable = true;
   user = "me";

@@ -1,7 +1,7 @@
 ---
 title: Package via uv2nix, not a hand-rolled fetch derivation
 status: accepted
-project: agentic-pkgs
+project: agent-env
 updated: 2026-10-21
 ---
 

@@ -1,7 +1,7 @@
 ---
 title: Linux only, no macOS output
 status: accepted
-project: agentic-pkgs
+project: agent-env
 updated: 2026-10-29
 ---
 

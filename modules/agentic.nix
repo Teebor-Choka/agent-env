@@ -447,7 +447,7 @@ in
 
         # Extensions baked into the store (for isolated sandboxes with no agent/network): install a
         # read-only snapshot of CLAUDE.md + the skills from `extensionsPackage`, and clear
-        # home.gitClone when that option exists (nix-modules) so a baked guest makes no network calls
+        # home.gitClone when that option exists (nix-vm) so a baked guest makes no network calls
         # at all for these checkouts (a caller's declaration is unconditional; this opts a guest back
         # out of it). Only the read-only bits are
         # symlinked, so ~/.claude stays writable for Claude's own credentials/projects. skillLink is
@@ -579,7 +579,7 @@ in
                         # the real bottleneck for many parallel sessions/subagents (same fix as the
                         # darwin launchd unit below). --limit-concurrency/--max-connections default to
                         # 1000/500 already. headroom comes from pkgs.agentic-tools (nix-packaged,
-                        # Teebor-Choka/agentic-pkgs) rather than a per-boot `uvx --from` fetch.
+                        # Teebor-Choka/agent-env) rather than a per-boot `uvx --from` fetch.
                         ExecStart = "${pkgs.agentic-tools}/bin/headroom proxy --backend anthropic --port 8787 --limit-concurrency 2000 --max-connections 1000 --anthropic-pre-upstream-concurrency 256";
                         Environment = [
                           "HOME=/home/${user}"
@@ -594,7 +594,7 @@ in
                     # equivalent (distinct from home-manager's per-user launchd.agents -- same
                     # field names, but directly under serviceConfig, not a nested config.* key, and
                     # no separate "enable": presence in the attrset is what matters). No
-                    # pkgs.agentic-tools here -- agentic-pkgs builds Linux only, headroom-ai ships
+                    # pkgs.agentic-tools here -- agent-env builds Linux only, headroom-ai ships
                     # no macOS wheel at all -- so this stays on the uvx fetch, same fixes as before:
                     # UV_MANAGED_PYTHON (launchd jobs get no PATH, so uvx falls back to Apple's
                     # ancient /usr/bin/python3) and --python 3.12 (uv's newest managed Python has no

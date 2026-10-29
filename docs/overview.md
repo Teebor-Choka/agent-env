@@ -1,7 +1,7 @@
 ---
-title: agentic-pkgs
+title: agent-env
 kind: overview
-project: agentic-pkgs
+project: agent-env
 updated: 2026-10-21
 ---
 

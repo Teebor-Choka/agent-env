@@ -1,14 +1,14 @@
 ---
 title: The environment modules live here, not with the sandbox builder
 status: accepted
-project: agentic-pkgs
+project: agent-env
 updated: 2026-10-29
 ---
 
 **Context.** The agent setup (which harnesses run, their settings, MCP wiring, headroom routing,
-plugin and skill delivery) lived in a personal config flake and in the VM library `nix-modules`.
+plugin and skill delivery) lived in a personal config flake and in the VM library `nix-vm`.
 Headroom is packaged here, so its version, its service and its routing sat in three repos.
-`nix-modules` builds and starts VMs; the agent setup needs none of that.
+`nix-vm` builds and starts VMs; the agent setup needs none of that.
 
 **Decision.** This flake owns the environment as modules: `nixosModules.agentic`,
 `darwinModules.agentic` (one file, platform fixed per export), `overlays.default`, and the
@@ -19,7 +19,7 @@ the builder sets: `agentic.user`, `sessionsDir`, `extensionsDir`, `extensionsPac
 passes store paths in.
 
 **Consequences.** The module needs the home-manager NixOS or nix-darwin module. It clears
-`home.gitClone` only when that option exists, so it does not depend on `nix-modules`. The
+`home.gitClone` only when that option exists, so it does not depend on `nix-vm`. The
 platform is a static argument per export because reading `pkgs.stdenv` or `pkgs.system` inside a
 module recurses infinitely in the module system's `_module.freeformType` pass. Verified by moving
 the code out of the consuming flake: the built system paths of every host and guest stayed

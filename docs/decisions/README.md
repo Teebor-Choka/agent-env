@@ -1,7 +1,7 @@
 ---
 title: Decisions
 kind: decisions-index
-project: agentic-pkgs
+project: agent-env
 updated: 2026-10-21
 ---
 
