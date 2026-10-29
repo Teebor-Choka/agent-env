@@ -6,8 +6,8 @@ updated: 2026-10-22
 ---
 
 **Context.** `headroom-ai` publishes no macOS wheel at all for 0.41.0 — PyPI only lists
-`manylinux_2_28_{x86_64,aarch64}` builds (`fastembed`'s `onnxruntime` dependency matches the same
-two platforms). The personal fleet this flake serves installs both tools only inside Linux dev
+`manylinux_2_28_{x86_64,aarch64}` builds (the `onnxruntime` dependency matches the same
+two platforms). The personal fleet this flake serves installs the tool only inside Linux dev
 microVM guests: `aarch64-linux` on the Apple Silicon host's own guests (Virtualization.framework),
 and `x86_64-linux` on `ws01`, a real independently-reachable NixOS workstation. Nothing on the
 macOS host installs either package through this flake — it runs `headroom` via a plain `uvx`
@@ -24,7 +24,7 @@ fails rather than silently resolving nothing. CI (`ubuntu-latest`) only builds a
 with no functional difference from the native build the consuming flake's own aarch64-linux
 builder VM already performs. If a future need arose to run `headroom` without the `[proxy]` extra
 on macOS, it would need its own package entry (and a real macOS wheel chain) — not a blanket
-inclusion, since `code-context-engine` has no established macOS need here either.
+inclusion.
 
 [^original-scope]: The original version of this decision scoped the flake to `x86_64-linux` only,
     on the assumption that the consuming fleet's dev-VM guests ran `x86_64-linux`. That assumption

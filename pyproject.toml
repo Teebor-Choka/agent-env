@@ -5,7 +5,6 @@ description = "Nix packaging for agentic-tooling PyPI packages with no nixpkgs e
 requires-python = ">=3.12"
 dependencies = [
   "headroom-ai[proxy]==0.41.0",
-  "code-context-engine[local]==0.4.26",
 ]
 
 [tool.uv]

@@ -1,7 +1,7 @@
 # AGENTS.md
 
-Nix packaging (via [uv2nix](https://github.com/pyproject-nix/uv2nix)) for two PyPI tools with no
-nixpkgs equivalent: `headroom-ai` and `code-context-engine`. See [`docs/overview.md`](docs/overview.md)
+Nix packaging (via [uv2nix](https://github.com/pyproject-nix/uv2nix)) for the PyPI tool
+`headroom-ai`, which has no nixpkgs equivalent. See [`docs/overview.md`](docs/overview.md)
 for the full writeup and [`docs/decisions/`](docs/decisions/) for why this exists and why it is
 built the way it is.
 
@@ -10,7 +10,7 @@ built the way it is.
 | Path | Purpose |
 |------|---------|
 | `flake.nix` | uv2nix wiring: loads the workspace, builds the python package set, exposes `packages.{aarch64-linux,x86_64-linux}.{default,agentic-tools}` |
-| `pyproject.toml` | Pins the two package versions (the only "dependencies" this project has) |
+| `pyproject.toml` | Pins the package version (the only "dependency" this project has) |
 | `uv.lock` | Full resolved dependency tree, regenerated with `uv lock` |
 | `.github/workflows/ci.yml` | `nix flake check` + `nix build` + `nix fmt --check` on every push/PR |
 | `renovate.json` | Bumps `flake.lock` automatically; `pyproject.toml` version pins get PRs too, but `uv lock` must be re-run by hand after accepting one |
@@ -35,5 +35,4 @@ nix fmt
 - Conventional commits.
 - Linux only, deliberately (`aarch64-linux` + `x86_64-linux`) — see
   `docs/decisions/linux-only-no-macos.md`.
-- One combined `agentic-tools` environment, not a package per tool — see
-  `docs/decisions/single-combined-environment.md`.
+- One `agentic-tools` environment (headroom only since `docs/decisions/drop-code-context-engine.md`).
