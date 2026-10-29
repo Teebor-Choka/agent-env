@@ -615,16 +615,18 @@ in
                   }
                 else
                   {
-                    # darwin has no systemd; launchd.agents is nix-darwin's own system-level
-                    # equivalent (distinct from home-manager's per-user launchd.agents -- same
-                    # field names, but directly under serviceConfig, not a nested config.* key, and
-                    # no separate "enable": presence in the attrset is what matters). No
+                    # darwin has no systemd; launchd.user.agents is nix-darwin's per-user launchd
+                    # option (distinct from home-manager's launchd.agents -- same field names, but
+                    # directly under serviceConfig, not a nested config.* key, and no separate
+                    # "enable": presence in the attrset is what matters). Not launchd.agents: that
+                    # one is loaded as root by the activation script, so the proxy ran as root in
+                    # the `system` domain and left root-owned files in the user's home. No
                     # pkgs.agentic-tools here -- agent-env builds Linux only, headroom-ai ships
                     # no macOS wheel at all -- so this stays on the uvx fetch, same fixes as before:
                     # UV_MANAGED_PYTHON (launchd jobs get no PATH, so uvx falls back to Apple's
                     # ancient /usr/bin/python3) and --python 3.12 (uv's newest managed Python has no
                     # onnxruntime wheels yet).
-                    launchd.agents.headroom-proxy-anthropic = {
+                    launchd.user.agents.headroom-proxy-anthropic = {
                       serviceConfig = {
                         ProgramArguments = [
                           "${pkgs.uv}/bin/uvx"
