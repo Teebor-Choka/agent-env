@@ -104,6 +104,10 @@
         inherit self;
         isLinuxHost = true;
       };
+      # The thinnest agent sandbox (modules/sandbox.nix): the chosen harnesses preconfigured in system
+      # locations, no home-manager and no user. For builders that supply only a bare guest, such as
+      # `sandy run --flake <this flake> --kind nixos-module --attr sandbox`.
+      nixosModules.sandbox = import ./modules/sandbox.nix { inherit self; };
       darwinModules.agentic = import ./modules/agentic.nix {
         inherit self;
         isLinuxHost = false;
@@ -123,6 +127,64 @@
         in
         {
           build = agenticToolsBySystem.${system};
+
+          # nixosModules.sandbox must evaluate into a complete NixOS system for every tool choice, with
+          # the user and the home files each tool needs. Forcing each system's drvPath at eval time fails the
+          # check on any option, assertion or overlay error; the live boot (sandy) is run by hand,
+          # see README.
+          sandbox-eval =
+            let
+              evalWith =
+                tools:
+                nixpkgs.lib.nixosSystem {
+                  modules = [
+                    self.nixosModules.sandbox
+                    {
+                      sandbox.tools = tools;
+                      nixpkgs.hostPlatform = system;
+                      boot.loader.grub.enable = false;
+                      fileSystems."/" = {
+                        device = "/dev/null";
+                        fsType = "ext4";
+                      };
+                      system.stateVersion = "24.05";
+                    }
+                  ];
+                };
+              claudeOnly = evalWith [ "claude" ];
+              all = evalWith [
+                "claude"
+                "opencode"
+                "codex"
+              ];
+              rulesOf = sys: lib.concatStringsSep "\n" sys.config.systemd.tmpfiles.rules;
+              has = sys: path: lib.hasInfix "/home/user/${path} " (rulesOf sys);
+              ok =
+                builtins.all (path: has all path) [
+                  ".claude.json"
+                  ".claude/settings.json"
+                  ".config/opencode/opencode.json"
+                  ".codex/config.toml"
+                ]
+                # an ordinary account with a home, owned by it
+                && all.config.users.users.user.isNormalUser
+                && all.config.users.users.user.home == "/home/user"
+                # a tool that is not selected leaves no config behind
+                && !(has claudeOnly ".codex/config.toml")
+                && !(has claudeOnly ".config/opencode/opencode.json");
+              systems' = [
+                claudeOnly
+                (evalWith [ "opencode" ])
+                (evalWith [ "codex" ])
+                all
+              ];
+            in
+            assert ok;
+            pkgs.writeText "sandbox-eval" (
+              builtins.unsafeDiscardStringContext (
+                lib.concatMapStringsSep "\n" (sys: sys.config.system.build.toplevel.drvPath) systems'
+              )
+            );
 
           # Unit test for the plugin marketplace normalizer: evaluated here (the sandbox has no nix),
           # then compared by the suite's jq checks. See tests/agent-plugins-suite.sh.
@@ -151,6 +213,20 @@
                 bash ${./tests/agent-plugins-suite.sh} ${records} ${fix}
                 touch "$out"
               '';
+        }
+      );
+
+      # Live boot test for nixosModules.sandbox (needs sandy, vfkit or qemu; not run in CI).
+      apps = lib.genAttrs (systems ++ [ "aarch64-darwin" ]) (
+        system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+        in
+        {
+          test-sandbox = {
+            type = "app";
+            program = "${pkgs.writeShellScript "test-sandbox" (builtins.readFile ./tests/sandbox-boot.sh)}";
+          };
         }
       );
 
