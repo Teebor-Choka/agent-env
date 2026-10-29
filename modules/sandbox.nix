@@ -1,13 +1,14 @@
 # modules/sandbox.nix
-# nixosModules.sandbox: the thinnest agent sandbox. It ships the chosen harnesses with their config
-# in system locations, so it works for whatever user the job runs as: no home-manager, no user
-# account, no dotfiles to link. Compression runs as a DynamicUser service.
+# nixosModules.sandbox: a basic user in a bare guest, preconfigured. It creates one ordinary account
+# (`sandbox.user`, default "user") with a minimal home, installs the chosen harnesses and a few
+# utilities, and runs the compression proxy as a DynamicUser service. No home-manager: the harness
+# config is written once into the home as plain, user-owned, writable files, the way a person who
+# had run each tool once would have them.
 #
-# What each tool reads (official docs, checked 2026-10-29):
-#   claude  /etc/claude-code/managed-settings.json and managed-mcp.json (managed-mcp.json takes
-#           exclusive control of MCP servers, so `claude mcp add` is refused)
-#   codex   /etc/codex/config.toml
-#   opencode  the file named by $OPENCODE_CONFIG
+# sandy's guest autologins root and runs the job as root, so run the job as the user with
+#   runuser -u user -- <command>
+# which keeps the injected environment (secrets) and sets HOME for that user.
+#
 # Not set: any model or provider. Those are the job's choice.
 { self }:
 {
@@ -21,38 +22,81 @@ let
   has = tool: builtins.elem tool cfg.tools;
   shared = import ./shared.nix;
   inherit (shared) headroomArgs headroomEnv codebaseMemoryMcpCmd;
+  home = "/home/${cfg.user}";
   routeClaude = cfg.compression && has "claude";
 
-  # One stdio server, indexed on spawn so the graph is never empty.
-  mcpServer = {
-    type = "stdio";
-    command = "codebase-memory-mcp";
-    args = [ ];
-    alwaysLoad = true;
-  };
+  json = name: value: pkgs.writeText name (builtins.toJSON value);
 
-  claudeSettings = {
-    env = {
-      # No telemetry, error reports, update checks or surveys from a throwaway sandbox.
-      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = "1";
-      DISABLE_TELEMETRY = "1";
-      DISABLE_ERROR_REPORTING = "1";
-      DISABLE_UPDATES = "1";
-      CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY = "1";
-    };
-  };
+  # Files of the minimal home, by path relative to $HOME. Each tool gets exactly what a user would
+  # have after first use: onboarding done, the code-graph MCP server registered, and the traffic
+  # to Anthropic or the tool vendor that a sandbox does not want switched off.
+  files =
+    lib.optionalAttrs (has "claude") {
+      ".claude.json" = json "claude.json" {
+        hasCompletedOnboarding = true;
+        mcpServers.codebase-memory-mcp = {
+          type = "stdio";
+          command = "codebase-memory-mcp";
+          args = [ ];
+          alwaysLoad = true;
+        };
+      };
+      ".claude/settings.json" = json "claude-settings.json" {
+        env = {
+          CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = "1";
+          DISABLE_TELEMETRY = "1";
+          DISABLE_ERROR_REPORTING = "1";
+          DISABLE_UPDATES = "1";
+          CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY = "1";
+        };
+      };
+    }
+    // lib.optionalAttrs (has "opencode") {
+      ".config/opencode/opencode.json" = json "opencode.json" {
+        "$schema" = "https://opencode.ai/config.schema.json";
+        autoupdate = false;
+        mcp.codebase-memory-mcp = {
+          type = "local";
+          command = codebaseMemoryMcpCmd;
+        };
+      };
+    }
+    // lib.optionalAttrs (has "codex") {
+      ".codex/config.toml" = pkgs.writeText "codex-config.toml" ''
+        check_for_update_on_startup = false
 
-  opencodeConfig = {
-    "$schema" = "https://opencode.ai/config.schema.json";
-    autoupdate = false;
-    mcp.codebase-memory-mcp = {
-      type = "local";
-      command = codebaseMemoryMcpCmd;
+        [analytics]
+        enabled = false
+
+        [feedback]
+        enabled = false
+
+        [mcp_servers.codebase-memory-mcp]
+        command = "sh"
+        args = ["-c", ${builtins.toJSON (builtins.elemAt codebaseMemoryMcpCmd 2)}]
+      '';
     };
-  };
+
+  # Every parent directory of a file, shallowest first, each owned by the user (tmpfiles creates
+  # only the leaf of a `d` line, and would leave a missing parent owned by root).
+  dirs = lib.unique (
+    lib.concatMap (
+      path:
+      let
+        parts = lib.init (lib.splitString "/" path);
+      in
+      lib.genList (n: lib.concatStringsSep "/" (lib.take (n + 1) parts)) (lib.length parts)
+    ) (lib.attrNames files)
+  );
 in
 {
   options.sandbox = {
+    user = lib.mkOption {
+      type = lib.types.str;
+      default = "user";
+      description = "The ordinary account the job runs as.";
+    };
+
     tools = lib.mkOption {
       type = lib.types.listOf (
         lib.types.enum [
@@ -80,6 +124,12 @@ in
     # claude-code is the only unfree package here.
     nixpkgs.config.allowUnfreePredicate = lib.mkDefault (pkg: lib.getName pkg == "claude-code");
 
+    users.users.${cfg.user} = {
+      isNormalUser = true;
+      inherit home;
+      shell = pkgs.bashInteractive;
+    };
+
     # Minimal utility tooling: what an agent needs to read, search and fetch.
     environment.systemPackages = [
       pkgs.git
@@ -92,37 +142,12 @@ in
     ++ lib.optional (has "opencode") pkgs.opencode
     ++ lib.optional (has "codex") pkgs.codex;
 
-    environment.etc = lib.mkMerge [
-      (lib.mkIf (has "claude") {
-        "claude-code/managed-settings.json".text = builtins.toJSON claudeSettings;
-        "claude-code/managed-mcp.json".text = builtins.toJSON {
-          mcpServers.codebase-memory-mcp = mcpServer;
-        };
-      })
-      (lib.mkIf (has "opencode") {
-        "agent-env/opencode.json".text = builtins.toJSON opencodeConfig;
-      })
-      (lib.mkIf (has "codex") {
-        "codex/config.toml".text = ''
-          check_for_update_on_startup = false
+    # `C` copies a file only when it is absent, so the user can edit it and it stays edited.
+    systemd.tmpfiles.rules =
+      map (dir: "d ${home}/${dir} 0755 ${cfg.user} users -") dirs
+      ++ lib.mapAttrsToList (path: source: "C ${home}/${path} 0644 ${cfg.user} users - ${source}") files;
 
-          [analytics]
-          enabled = false
-
-          [feedback]
-          enabled = false
-
-          [mcp_servers.codebase-memory-mcp]
-          command = "sh"
-          args = ["-c", ${builtins.toJSON (builtins.elemAt codebaseMemoryMcpCmd 2)}]
-        '';
-      })
-    ];
-
-    environment.variables = lib.mkMerge [
-      (lib.mkIf (has "opencode") { OPENCODE_CONFIG = "/etc/agent-env/opencode.json"; })
-      (lib.mkIf routeClaude { ANTHROPIC_BASE_URL = "http://127.0.0.1:8787"; })
-    ];
+    environment.variables = lib.mkIf routeClaude { ANTHROPIC_BASE_URL = "http://127.0.0.1:8787"; };
 
     systemd.services.headroom-proxy = lib.mkIf cfg.compression {
       description = "Headroom compression proxy (anthropic backend)";

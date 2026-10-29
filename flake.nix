@@ -129,7 +129,7 @@
           build = agenticToolsBySystem.${system};
 
           # nixosModules.sandbox must evaluate into a complete NixOS system for every tool choice, with
-          # the system config files in place. Forcing each system's drvPath at eval time fails the
+          # the user and the home files each tool needs. Forcing each system's drvPath at eval time fails the
           # check on any option, assertion or overlay error; the live boot (sandy) is run by hand,
           # see README.
           sandbox-eval =
@@ -157,16 +157,21 @@
                 "opencode"
                 "codex"
               ];
-              etcOf = sys: builtins.attrNames sys.config.environment.etc;
+              rulesOf = sys: lib.concatStringsSep "\n" sys.config.systemd.tmpfiles.rules;
+              has = sys: path: lib.hasInfix "/home/user/${path} " (rulesOf sys);
               ok =
-                builtins.all (n: builtins.elem n (etcOf all)) [
-                  "claude-code/managed-settings.json"
-                  "claude-code/managed-mcp.json"
-                  "agent-env/opencode.json"
-                  "codex/config.toml"
+                builtins.all (path: has all path) [
+                  ".claude.json"
+                  ".claude/settings.json"
+                  ".config/opencode/opencode.json"
+                  ".codex/config.toml"
                 ]
+                # an ordinary account with a home, owned by it
+                && all.config.users.users.user.isNormalUser
+                && all.config.users.users.user.home == "/home/user"
                 # a tool that is not selected leaves no config behind
-                && !(builtins.elem "codex/config.toml" (etcOf claudeOnly));
+                && !(has claudeOnly ".codex/config.toml")
+                && !(has claudeOnly ".config/opencode/opencode.json");
               systems' = [
                 claudeOnly
                 (evalWith [ "opencode" ])
