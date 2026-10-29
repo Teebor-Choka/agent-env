@@ -36,9 +36,12 @@ agentic = {
 };
 ```
 
-`nixosModules.sandbox` is the same environment made self-contained (home-manager, a user, compression
-on): `sandy run --flake github:Teebor-Choka/agent-env --kind nixos-module --attr sandbox -- <cmd>`
-boots it in a sandy VM. Override any `agentic.*` option as usual.
+`nixosModules.sandbox` is the thinnest version, for a bare guest such as a sandy VM: the harnesses
+you pick (`sandbox.tools`, default `[ "claude" ]`) with their config in system locations
+(`/etc/claude-code`, `/etc/codex`, `$OPENCODE_CONFIG`), the compression proxy as a `DynamicUser`
+service, and a few utilities (git, curl, jq, ripgrep). No home-manager, no user, no dotfiles, no model
+or provider choice. `sandy run --flake github:Teebor-Choka/agent-env --kind nixos-module --attr sandbox -- <cmd>`
+boots it. The live boot test is `nix run .#test-sandbox` (needs sandy and a hypervisor; not in CI).
 
 The module has no VM knowledge. It adds `overlays.default` (`agentic-tools`, `codebase-memory-mcp`,
 `omp`) and the home-manager modules `home.agentPlugins`, `home.skillLink` and `home.swePlugin`.

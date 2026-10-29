@@ -27,3 +27,13 @@ identical.
 
 **Set aside.** A separate private repo for the agent setup: the generic part is public already
 and the personal values stay in the consuming flake, so nothing needs scrubbing.
+
+**Sandbox variant.** `nixosModules.sandbox` is deliberately not the dev-home module with a user
+bolted on. A sandbox runs as whatever user the job has, so it puts each harness's config in a
+system location (Claude Code `/etc/claude-code/managed-*.json`, codex `/etc/codex/config.toml`,
+opencode `$OPENCODE_CONFIG`) and runs the proxy as a `DynamicUser`; it needs no home-manager and
+creates no account. Claude's `managed-mcp.json` takes exclusive control of MCP servers, which is
+the right default for a preconfigured sandbox. It sets no model or provider. Everything the two
+modules agree on (proxy flags, the MCP wrapper) lives in `modules/shared.nix`. Config locations
+and opt-outs come from the vendors' docs, checked 2026-10-29: code.claude.com/docs (managed
+settings, managed MCP, env vars), learn.chatgpt.com/docs/config-file, opencode.ai/docs/config.
