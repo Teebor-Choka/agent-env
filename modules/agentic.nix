@@ -584,6 +584,8 @@ in
                         Environment = [
                           "HOME=/home/${user}"
                           "PATH=/run/current-system/sw/bin"
+                          # No anonymous usage beacon from the proxy.
+                          "HEADROOM_BEACON=off"
                         ];
                       };
                     };
@@ -625,6 +627,8 @@ in
                         EnvironmentVariables = {
                           HOME = "/Users/${user}";
                           UV_MANAGED_PYTHON = "1";
+                          # No anonymous usage beacon from the proxy.
+                          HEADROOM_BEACON = "off";
                         };
                         StandardOutPath = "/Users/${user}/Library/Logs/headroom/proxy-anthropic.log";
                         StandardErrorPath = "/Users/${user}/Library/Logs/headroom/proxy-anthropic.log";
