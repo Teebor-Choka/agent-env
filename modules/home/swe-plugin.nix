@@ -1,6 +1,6 @@
 # modules/home/swe-plugin.nix
-# Wire the swe-process policy-gate plugin into the agent harnesses from a single
-# built plugin closure (skills-private's `packages.swe-process-plugin`). The
+# Wire the swe-workflows policy-gate plugin into the agent harnesses from a single
+# built plugin closure (skills-private's `packages.swe-workflows-plugin`). The
 # consumer passes the built package; this module installs the per-harness overlay
 # each agent reads at startup. All four overlays call the same `hooks/gate.sh`;
 # the discipline lives in `.agents/policy`, never here. opt-in: home.swePlugin.enable.
@@ -29,14 +29,14 @@ let
 in
 {
   options.home.swePlugin = {
-    enable = mkEnableOption "the swe-process policy-gate plugin across agent harnesses";
+    enable = mkEnableOption "the swe-workflows policy-gate plugin across agent harnesses";
 
     package = mkOption {
       type = types.package;
       description = ''
-        The built swe-process plugin closure: a plugin directory holding
+        The built swe-workflows plugin closure: a plugin directory holding
         `.claude-plugin/plugin.json`, `hooks/`, and `skills/`. Pass
-        `inputs.skills-private.packages.$\{system}.swe-process-plugin`.
+        `inputs.skills-private.packages.$\{system}.swe-workflows-plugin`.
       '';
     };
 
@@ -126,22 +126,22 @@ in
       );
     }
 
-    # Claude Code: the plugin dir is a launch modifier, not a config file. Join the shared
-    # `--plugin-dir` list that home.agentPlugins turns into the alias; the given launch command /
-    # microVM template uses the `pluginDir` option (or SWE_PLUGIN_DIR) directly.
+    # Claude Code: the plugin dir is a launch modifier, not a config file. Join the plugins that
+    # home.agentPlugins links under ~/.claude/plugin-dirs for the `claude` function; the given launch
+    # command / microVM template uses the `pluginDir` option (or SWE_PLUGIN_DIR) directly.
     (mkIf (elem "claude" cfg.agents) {
-      home.agentPlugins.pluginDirs = [ pluginDir ];
+      home.agentPlugins.claudePlugins.swe-workflows = pluginDir;
     })
 
     # oh-my-pi: link the pre-hook overlay into the agent hooks dir.
     (mkIf (elem "omp" cfg.agents) {
-      home.file.".omp/agent/hooks/pre/swe-process.mjs".source =
+      home.file.".omp/agent/hooks/pre/swe-workflows.mjs".source =
         "${cfg.package}/hooks/omp/policy-gate.mjs";
     })
 
     # OpenCode: drop the guardrail module into the user plugins dir.
     (mkIf (elem "opencode" cfg.agents) {
-      home.file.".config/opencode/plugin/swe-process.mjs".source =
+      home.file.".config/opencode/plugin/swe-workflows.mjs".source =
         "${cfg.package}/hooks/opencode/guard.mjs";
     })
 

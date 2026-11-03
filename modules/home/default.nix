@@ -4,7 +4,7 @@
 {
   imports = [
     ./skill-link.nix # opt-in: home.skillLink: flatten SKILL.md dirs into ~/.claude/skills
-    ./swe-plugin.nix # opt-in: home.swePlugin: wire the swe-process policy-gate plugin per harness
+    ./swe-plugin.nix # opt-in: home.swePlugin: wire the swe-workflows policy-gate plugin per harness
     ./agent-plugins.nix # opt-in: home.agentPlugins: deliver marketplace plugins to every harness
   ];
 }

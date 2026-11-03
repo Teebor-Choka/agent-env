@@ -2,8 +2,10 @@
 # Deliver every plugin of one or more skills repos to the agent harnesses from the repos'
 # marketplace manifests. The skill dirs stay the single source of truth; a plugin is a thin
 # bundle over them (see agent-plugins-lib.nix). opt-in: home.agentPlugins.enable.
-#   Claude Code: one closure per plugin, loaded with a repeated `--plugin-dir` (shell alias), so
-#                skills surface namespaced (`plugin:skill`).
+#   Claude Code: one closure per plugin, linked at a stable path (~/.claude/plugin-dirs/<name>) and
+#                loaded with a repeated `--plugin-dir` by a `claude` shell function that globs that
+#                dir at launch, so skills surface namespaced (`plugin:skill`) and a rebuild reaches
+#                even a shell that was opened before it.
 #   oh-my-pi, OpenCode, Codex: every skill linked under `skillsTarget` (~/.agents/skills).
 {
   config,
@@ -22,6 +24,7 @@ let
     concatStringsSep
     mapAttrsToList
     listToAttrs
+    mapAttrs'
     nameValuePair
     removePrefix
     unique
@@ -53,6 +56,7 @@ let
       '';
 
   skillsRel = removePrefix "${config.home.homeDirectory}/" cfg.skillsTarget;
+  pluginDirsRel = ".claude/plugin-dirs";
 in
 {
   options.home.agentPlugins = {
@@ -90,24 +94,54 @@ in
       description = "Read-only: every skill delivered here. Feed to `home.skillLink.exclude`.";
     };
 
+    claudePlugins = mkOption {
+      type = types.attrsOf types.str;
+      default = { };
+      description = ''
+        Plugin name to plugin dir (a store path) for Claude Code. Each is linked at
+        `~/.claude/plugin-dirs/<name>`; the `claude` function launches with one `--plugin-dir`
+        per entry in that dir. Attrsets merge, so a module that wires its own plugin
+        (home.swePlugin) adds its dir here.
+      '';
+    };
+
     pluginDirs = mkOption {
       type = types.listOf types.str;
       default = [ ];
       description = ''
-        Every `--plugin-dir` Claude Code is launched with. Lists merge, so a module that wires
-        its own plugin (home.swePlugin) appends its dir here; this module owns the alias.
+        Extra `--plugin-dir` values passed verbatim, for a dir that has no stable name. Prefer
+        `claudePlugins`: these are baked into the function and need a rebuild and a new shell.
       '';
     };
   };
 
   config = mkMerge [
-    (mkIf (cfg.pluginDirs != [ ]) {
-      home.shellAliases.claude =
-        "claude " + concatStringsSep " " (map (d: "--plugin-dir ${d}") cfg.pluginDirs);
-    })
+    (mkIf (cfg.claudePlugins != { } || cfg.pluginDirs != [ ]) (
+      let
+        # `null_glob` (zsh) / the -d test (bash) keep an empty plugin-dirs a no-op, not an error.
+        fn = nullGlob: ''
+          claude() {
+            ${lib.optionalString nullGlob "setopt local_options null_glob"}
+            local d; local -a a=()
+            for d in "$HOME"/${pluginDirsRel}/*; do [ -d "$d" ] && a+=(--plugin-dir "$d"); done
+            ${concatStringsSep "\n" (map (d: "a+=(--plugin-dir ${lib.escapeShellArg d})") cfg.pluginDirs)}
+            command claude "''${a[@]}" "$@"
+          }
+        '';
+      in
+      {
+        home.file = mapAttrs' (
+          n: path: nameValuePair "${pluginDirsRel}/${n}" { source = path; }
+        ) cfg.claudePlugins;
+        programs.zsh.initContent = mkIf config.programs.zsh.enable (fn true);
+        programs.bash.initExtra = mkIf config.programs.bash.enable (fn false);
+      }
+    ))
 
     (mkIf cfg.enable {
-      home.agentPlugins.pluginDirs = map (p: toString (closure p)) plugins;
+      home.agentPlugins.claudePlugins = listToAttrs (
+        map (p: nameValuePair p.name (toString (closure p))) plugins
+      );
 
       home.file = listToAttrs (
         concatMap (
