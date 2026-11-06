@@ -147,29 +147,46 @@
       # overlays.default (t3-server) or pass `t3Connect.delegator.package`.
       homeModules.t3-connect-delegator = import ./modules/t3-connect/delegator.nix { inherit self; };
 
-      packages = forEachSystem (
-        system:
-        let
-          t3Pkgs = import nixpkgs {
-            inherit system;
-            overlays = [ self.overlays.default ];
-          };
-        in
-        {
-          default = agenticToolsBySystem.${system};
-          agentic-tools = agenticToolsBySystem.${system};
-          t3-link-vm = import ./modules/t3-connect/link-vm.nix { pkgs = t3Pkgs; };
-          t3-unlink-vm = import ./modules/t3-connect/unlink-vm.nix { pkgs = t3Pkgs; };
-          t3-sandy = import ./modules/t3-connect/sandy.nix { pkgs = t3Pkgs; };
-        }
-        # Runtime proof of the host network module in two VMs. Needs KVM, so it is a package to run by
-        # hand on a KVM host (`nix build .#t3-connect-host-test -L`), not a check.
-        // lib.optionalAttrs (system == "x86_64-linux") {
-          t3-connect-host-test = nixpkgs.legacyPackages.${system}.testers.runNixOSTest (
-            import ./tests/t3-connect-host-vm.nix { inherit self; }
-          );
-        }
-      );
+      packages =
+        forEachSystem (
+          system:
+          let
+            t3Pkgs = import nixpkgs {
+              inherit system;
+              overlays = [ self.overlays.default ];
+            };
+          in
+          {
+            default = agenticToolsBySystem.${system};
+            agentic-tools = agenticToolsBySystem.${system};
+            t3-link-vm = import ./modules/t3-connect/link-vm.nix { pkgs = t3Pkgs; };
+            t3-unlink-vm = import ./modules/t3-connect/unlink-vm.nix { pkgs = t3Pkgs; };
+            t3-sandy = import ./modules/t3-connect/sandy.nix { pkgs = t3Pkgs; };
+          }
+          # Runtime proof of the host network module in two VMs. Needs KVM, so it is a package to run by
+          # hand on a KVM host (`nix build .#t3-connect-host-test -L`), not a check.
+          // lib.optionalAttrs (system == "x86_64-linux") {
+            t3-connect-host-test = nixpkgs.legacyPackages.${system}.testers.runNixOSTest (
+              import ./tests/t3-connect-host-vm.nix { inherit self; }
+            );
+          }
+        )
+        # The delegator's tools run on the machine with the T3 app, which is the Mac. Scripts only: the
+        # t3 CLI must match the app, so pass `T3_BIN` or `t3Connect.delegator.package`.
+        // {
+          aarch64-darwin =
+            let
+              t3Pkgs = import nixpkgs {
+                system = "aarch64-darwin";
+                overlays = [ self.overlays.default ];
+              };
+            in
+            {
+              t3-link-vm = import ./modules/t3-connect/link-vm.nix { pkgs = t3Pkgs; };
+              t3-unlink-vm = import ./modules/t3-connect/unlink-vm.nix { pkgs = t3Pkgs; };
+              t3-sandy = import ./modules/t3-connect/sandy.nix { pkgs = t3Pkgs; };
+            };
+        };
 
       checks = forEachSystem (
         system:
