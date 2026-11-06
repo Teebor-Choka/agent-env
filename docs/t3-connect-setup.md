@@ -125,9 +125,17 @@ process list of the delegator for the length of the link call. The script never 
 
 ### Remove a link
 
-The layer does not wrap this. Run `t3 environment list --base-dir <base>` to find the entry, and
-`t3 environment unlink --help` for the argument form. A guest that went away stays listed as offline until you
-unlink it.
+Run `t3-unlink-vm <id|label|url>` (`--base-dir DIR`, `--force` as for `t3-link-vm`).
+
+1. The script checks the CLI version as `t3-link-vm` does.
+2. It reads `t3 environment list --json` and selects the entries whose id, label or URL equals the argument.
+   The match is exact, never a pattern.
+3. It stops when none or more than one entry matches. The error for several lists their ids; pass one id.
+4. It runs `t3 environment unlink <id> --base-dir <base>`, prints the result and exits with its status.
+
+This removes only the delegator's entry. The guest, its mesh node and its secrets stay. The guest keeps the
+session it issued for the link until you revoke it in the guest's Connections. A guest that went away stays
+listed as offline until you unlink it.
 
 ### Errors
 
@@ -139,6 +147,8 @@ unlink it.
 | `<target> did not return a pairing code` | The output was not one plain line. A login banner or an ssh warning is the usual cause. Remove a server banner with `Banner none` in the guest's sshd config. Silence ssh's own warnings with `LogLevel ERROR` in the client's ssh config entry for the host. |
 | `t3-pair: run as <user> (ssh in as that user)` | The ssh user is not `t3Connect.user`. |
 | `t3-pair: no code (is t3-serve running, and are you the <user> user?)` | The server has not started: check that the host wrote `.ready` and that `t3-serve` is active. |
+| `t3-unlink-vm: no linked environment matches '<name>'` | Run `t3 environment list --base-dir <base>` and use an id, the exact label or the exact URL. |
+| `t3-unlink-vm: '<name>' matches N environments; use one id:` | Several links share the label. Pass one of the listed ids. |
 | the link is refused for the URL | Use the guest's tailnet IPv6 address in `http://[…]:3773`. Plain http is accepted only for loopback, `.ts.net` names and `fd7a:115c:a1e0::/48`. |
 
 ## 5. Check the setup
@@ -150,6 +160,7 @@ unlink it.
 | server up | on the guest: `systemctl is-active t3-serve` | `active` |
 | port scope | from a non-mesh machine: connect to the guest on 3773 | refused or timed out |
 | link | `t3 environment list --base-dir <base>` | the guest listed |
+| unlink | `t3-unlink-vm <label>`, then the same list | the guest no longer listed |
 | mode | the link line shows `full-access` | yes |
 
-Nothing removes a link when a guest goes away. Remove it with `t3 environment unlink`.
+Nothing removes a link when a guest goes away. Remove it with `t3-unlink-vm`.

@@ -50,22 +50,7 @@ pkgs.writeShellApplication {
     url="$2"
     t3="''${T3_BIN:-${t3}/bin/t3}"
 
-    cli=$("$t3" --version | sed 's/^t3 v//')
-    runtime="$base/userdata/server-runtime.json"
-    server=""
-    [ -f "$runtime" ] && server=$(jq -r '.serverVersion // empty' "$runtime")
-    if [ -n "$server" ]; then
-      if [ "$server" != "$cli" ]; then
-        echo "t3-link-vm: the t3 CLI is $cli but the delegator is $server; use a CLI built for $server" >&2
-        exit 1
-      fi
-    elif [ "$force" = 1 ]; then
-      echo "t3-link-vm: cannot compare versions (no serverVersion in $runtime); going on because of --force" >&2
-    else
-      echo "t3-link-vm: cannot compare versions: no serverVersion in $runtime (is the delegator running?); start it, or pass --force" >&2
-      exit 1
-    fi
-
+    ${import ./cli-version.nix "t3-link-vm"}
     # `--` so a target that starts with a dash is a host, never an ssh option.
     code=$(ssh -o BatchMode=yes -- "$target" t3-pair 5m delegator) || {
       echo "t3-link-vm: could not mint a code on $target" >&2

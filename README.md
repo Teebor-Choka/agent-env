@@ -82,6 +82,7 @@ t3ConnectHost.enable = true;                                # taps named vm-* jo
 imports = [ inputs.agent-env.homeModules.t3-connect-delegator ];
 t3Connect.delegator = { enable = true; package = <the t3 CLI matching the app>; };
 #   t3-link-vm <ssh-target> "http://[<node ipv6>]:3773"       # full access by default
+#   t3-unlink-vm <id|label|url>                               # forget it again
 ```
 
 What to set on each machine (mesh server, host, guest, delegator) and how to check it:
@@ -114,7 +115,7 @@ The host fills the secrets directory before boot and writes the marker `.ready` 
 (virtiofs, a disk) is the builder's business. The overlay adds `pkgs.t3-server` (headless `t3 serve`). A guest
 that is linked needs the mesh IPv6 address: a peer link refuses plain http except for loopback and the tailnet
 range `fd7a:115c:a1e0::/48`. Checks: `nix flake check --all-systems` evaluates the guest and host modules and
-runs the `t3-link-vm` suite; the rules are proven in two VMs with `nix build .#t3-connect-host-test -L` on a KVM host.
+runs the `t3-link-vm` and `t3-unlink-vm` suites; the rules are proven in two VMs with `nix build .#t3-connect-host-test -L` on a KVM host.
 
 ## Updating
 

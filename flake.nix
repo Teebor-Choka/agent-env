@@ -143,21 +143,23 @@
       };
       # home.agentPlugins, home.skillLink, home.swePlugin. Also registered by the modules above.
       homeModules.agentic = ./modules/home;
-      # t3-link-vm, for the machine that runs the T3 app (the delegator). Needs the consumer to apply
+      # t3-link-vm and t3-unlink-vm, for the machine that runs the T3 app (the delegator). Needs the consumer to apply
       # overlays.default (t3-server) or pass `t3Connect.delegator.package`.
       homeModules.t3-connect-delegator = import ./modules/t3-connect/delegator.nix { inherit self; };
 
       packages = forEachSystem (
         system:
+        let
+          t3Pkgs = import nixpkgs {
+            inherit system;
+            overlays = [ self.overlays.default ];
+          };
+        in
         {
           default = agenticToolsBySystem.${system};
           agentic-tools = agenticToolsBySystem.${system};
-          t3-link-vm = import ./modules/t3-connect/link-vm.nix {
-            pkgs = import nixpkgs {
-              inherit system;
-              overlays = [ self.overlays.default ];
-            };
-          };
+          t3-link-vm = import ./modules/t3-connect/link-vm.nix { pkgs = t3Pkgs; };
+          t3-unlink-vm = import ./modules/t3-connect/unlink-vm.nix { pkgs = t3Pkgs; };
         }
         # Runtime proof of the host network module in two VMs. Needs KVM, so it is a package to run by
         # hand on a KVM host (`nix build .#t3-connect-host-test -L`), not a check.
@@ -524,7 +526,7 @@
               '';
 
           # homeModules.t3-connect-delegator: evaluated with a stub for home-manager's option, since this
-          # flake has no home-manager input. Enabled installs t3-link-vm; disabled installs nothing.
+          # flake has no home-manager input. Enabled installs t3-link-vm and t3-unlink-vm; disabled installs nothing.
           t3-connect-delegator-eval =
             let
               pkgsOv = import nixpkgs {
@@ -549,8 +551,10 @@
               on = evalWith true;
               off = evalWith false;
               ok =
-                lib.length on.config.home.packages == 1
-                && lib.getName (lib.head on.config.home.packages) == "t3-link-vm"
+                map lib.getName on.config.home.packages == [
+                  "t3-link-vm"
+                  "t3-unlink-vm"
+                ]
                 && off.config.home.packages == [ ];
             in
             assert lib.assertMsg ok "t3-connect-delegator-eval failed";
@@ -565,11 +569,16 @@
                 inherit pkgs;
                 t3 = stubT3;
               };
+              unlinkVm = import ./modules/t3-connect/unlink-vm.nix {
+                inherit pkgs;
+                t3 = stubT3;
+              };
             in
             pkgs.runCommand "t3-link-vm-test"
               {
                 nativeBuildInputs = [
                   linkVm
+                  unlinkVm
                   pkgs.bash
                   pkgs.jq
                   pkgs.gnused
@@ -578,6 +587,7 @@
               }
               ''
                 bash ${./tests/t3-link-vm.sh} ${linkVm}/bin/t3-link-vm
+                bash ${./tests/t3-unlink-vm.sh} ${unlinkVm}/bin/t3-unlink-vm
                 touch "$out"
               '';
 

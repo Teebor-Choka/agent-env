@@ -1,7 +1,7 @@
 # modules/t3-connect/delegator.nix
 # homeModules.t3-connect-delegator: the delegator's side of the t3-connect layer. The delegator is the
-# user's own T3 server (the Mac app's). It installs `t3-link-vm`, which links a sandbox to it. The
-# `t3` CLI must match the delegator's version; pass the matching package. See
+# user's own T3 server (the Mac app's). It installs `t3-link-vm` and `t3-unlink-vm`, which link a
+# sandbox to it and forget one. The `t3` CLI must match the delegator's version; pass the matching package. See
 # docs/decisions/t3-connect-layer.md.
 { self }:
 {
@@ -30,6 +30,10 @@ in
   config = lib.mkIf cfg.enable {
     home.packages = [
       (import ./link-vm.nix {
+        inherit pkgs;
+        t3 = cfg.package;
+      })
+      (import ./unlink-vm.nix {
         inherit pkgs;
         t3 = cfg.package;
       })
