@@ -30,8 +30,9 @@ ADRs below cover the decisions that matter.
 |------|---------|
 | `flake.nix` | Loads the uv workspace, builds the python package set via uv2nix + pyproject-build-systems, exposes `packages.{aarch64-linux,x86_64-linux}.{default,agentic-tools}` |
 | `modules/agentic.nix` | `nixosModules.agentic` and `darwinModules.agentic`: harness packages and settings, sessions, extensions, headroom service and shell routing |
+| `modules/t3-connect/` | the t3-connect layer: `guest.nix` (`nixosModules.t3-connect`), `host.nix` (`nixosModules.t3-connect-host`), `delegator.nix` (`homeModules.t3-connect-delegator`) and `link-vm.nix` (`t3-link-vm`) |
 | `modules/home/` | home-manager modules for plugin and skill delivery (`home.agentPlugins`, `home.skillLink`, `home.swePlugin`) |
-| `tests/` | the plugin-normalizer suite and fixtures |
+| `tests/` | the plugin-normalizer suite and fixtures, the `t3-link-vm` suite, and the host network VM test |
 | `pyproject.toml` | The only "dependency" this project has: the pinned headroom-ai version |
 | `uv.lock` | Full resolved dependency tree (101 packages), regenerated with `uv lock` |
 | `.github/workflows/ci.yml` | `nix flake check` + `nix build` + `nix fmt --check` |
@@ -68,5 +69,5 @@ flowchart LR
 ## Decisions
 
 See [`decisions/`](decisions/README.md) for the ADRs: why uv2nix over a hand-rolled fetch
-derivation, why Linux only, why code-context-engine was dropped, and why the environment lives
-here and not with the sandbox builder.
+derivation, why Linux only, why code-context-engine was dropped, why the environment lives
+here and not with the sandbox builder, and what the t3-connect layer owns (including a host network module).

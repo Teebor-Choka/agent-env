@@ -56,6 +56,40 @@ feeds `extensions = "baked"`.
 
 `pkgs.agentic-tools` is one environment carrying `headroom` on `PATH`.
 
+### The t3-connect layer
+
+A switchable layer for reaching a sandbox from a T3 Code client (the app, a browser, the phone) over your own
+mesh, with no per-sandbox click. Off by default: `t3Connect.enable = false` adds nothing. The reasoning and the
+specification are in [`docs/decisions/t3-connect-layer.md`](docs/decisions/t3-connect-layer.md).
+
+```nix
+# 1. the sandbox: runs `t3 serve`, joins the mesh, seeds the t3 settings
+imports = [ inputs.agent-env.nixosModules.t3-connect ];
+t3Connect = {
+  enable = true;
+  user = "me";                                              # an existing ordinary account
+  harnesses = [ "claude" "opencode" ];                      # opencode is seeded enabled; t3 leaves it off
+  credentials.CLAUDE_CODE_OAUTH_TOKEN = "claude-oauth-token";   # env var -> file in secretsDir (/run/secrets)
+  providers.codex = false;                                  # seeded only when absent, so app edits persist
+  mesh = { enable = true; loginServer = "https://mesh.example.net"; };
+};
+
+# 2. the host, optional: a bridge, NAT and a firewall that give guests public egress only
+imports = [ inputs.agent-env.nixosModules.t3-connect-host ];
+t3ConnectHost.enable = true;                                # taps named vm-* join the bridge t3br0
+
+# 3. the machine that runs the T3 app (home-manager): links a sandbox to it
+imports = [ inputs.agent-env.homeModules.t3-connect-delegator ];
+t3Connect.delegator = { enable = true; package = <the t3 CLI matching the app>; };
+#   t3-link-vm <ssh-target> "http://[<node ipv6>]:3773"       # full access by default
+```
+
+The host fills the secrets directory before boot and writes the marker `.ready` last; how it is shared
+(virtiofs, a disk) is the builder's business. The overlay adds `pkgs.t3-server` (headless `t3 serve`). A guest
+that is linked needs the mesh IPv6 address: a peer link refuses plain http except for loopback and the tailnet
+range `fd7a:115c:a1e0::/48`. Checks: `nix flake check --all-systems` evaluates the guest and host modules and
+runs the `t3-link-vm` suite; the rules are proven in two VMs with `nix build .#t3-connect-host-test -L` on a KVM host.
+
 ## Updating
 
 - **Nix inputs** (`flake.lock`): `nix flake update`.
