@@ -119,8 +119,6 @@ grep -q "environment link" "$LOG" && bad "nothing is linked after a banner" || o
 
 # 9. an ssh target that looks like an option is not read as one
 new_env
-
-new_env
 rc=$("$SUT" --base-dir "$TMP/base" -- -oProxyCommand=evil http://x:3773 >"$TMP/out" 2>"$TMP/err"; echo $?)
 grep -q "^ssh -o BatchMode=yes -- -oProxyCommand=evil t3-pair" "$LOG" && ok "an option-like target comes after --, and ssh never prompts" || bad "an option-like target comes after --, and ssh never prompts"
 

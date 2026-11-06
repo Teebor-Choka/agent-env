@@ -65,13 +65,11 @@ let
   # A path unit never fires here: virtiofs does not deliver inotify events for files the host writes
   # after boot. The stamp is the marker's mtime, so a re-inject (new secrets, new join key) restarts
   # the units and a quiet poll does nothing.
-  restartUnits = lib.concatStringsSep " " (
-    [ "t3-serve.service" ]
-    ++ lib.optionals cfg.mesh.enable [
-      "tailscaled-autoconnect.service"
-      "t3-hostname.service"
-    ]
-  );
+  meshUnits = lib.optionals cfg.mesh.enable [
+    "tailscaled-autoconnect.service"
+    "t3-hostname.service"
+  ];
+  restartUnits = lib.concatStringsSep " " ([ "t3-serve.service" ] ++ meshUnits);
   readyScript = ''
     [ -e ${lib.escapeShellArg marker} ] || exit 0
     stamp=$(stat -c %Y.%i ${lib.escapeShellArg marker})
@@ -288,14 +286,7 @@ in
             description = "T3 Code headless server";
             # `after` the join, not `requires`: a failed join must not block t3 itself, and the node
             # name must be applied before the server reports its address.
-            after = [
-              "network.target"
-            ]
-            ++ lib.optionals cfg.mesh.enable [
-              "tailscaled.service"
-              "tailscaled-autoconnect.service"
-              "t3-hostname.service"
-            ];
+            after = [ "network.target" ] ++ lib.optional cfg.mesh.enable "tailscaled.service" ++ meshUnits;
             # opencode is not in the t3 wrapper's PATH (only claude, codex, git, gh), so add it here.
             path =
               lib.optional cfg.mesh.enable config.services.tailscale.package

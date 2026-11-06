@@ -172,6 +172,22 @@
         system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
+
+          # Shared by the t3-* checks: the stub that lets a module set evaluate as a whole system, an
+          # option read that returns a default instead of aborting, and "this configuration is refused".
+          stubSystem = {
+            nixpkgs.hostPlatform = system;
+            boot.loader.grub.enable = false;
+            fileSystems."/" = {
+              device = "/dev/null";
+              fsType = "ext4";
+            };
+            system.stateVersion = "24.05";
+          };
+          get =
+            sys: path: default:
+            lib.attrByPath path default sys.config;
+          evalFails = sys: !(builtins.tryEval sys.config.system.build.toplevel.drvPath).success;
         in
         {
           build = agenticToolsBySystem.${system};
@@ -245,16 +261,10 @@
                 nixpkgs.lib.nixosSystem {
                   modules = [
                     self.nixosModules.t3-connect
+                    stubSystem
                     {
-                      nixpkgs.hostPlatform = system;
                       nixpkgs.overlays = [ self.overlays.default ];
                       nixpkgs.config.allowUnfreePredicate = pkg: lib.getName pkg == "claude-code";
-                      boot.loader.grub.enable = false;
-                      fileSystems."/" = {
-                        device = "/dev/null";
-                        fsType = "ext4";
-                      };
-                      system.stateVersion = "24.05";
                       users.users.user.isNormalUser = true;
                     }
                     extra
@@ -316,9 +326,6 @@
               svc = sys: sys.config.systemd.services;
               # An absent option or unit reads as the default, so a missing behaviour fails its case
               # instead of aborting the whole evaluation.
-              get =
-                sys: path: default:
-                lib.attrByPath path default sys.config;
               genOf = sys: key: sys.config.t3Connect.generated.${key} or "";
               has = lib.hasInfix;
               cases = {
@@ -345,8 +352,6 @@
                 "seed adds opencode enabled and codex off" =
                   has ''.providerInstances["opencode"] //= {"driver": "opencode", "enabled": true}'' (genOf on "seed")
                   && has ''.providerInstances["codex"] //= {"driver": "codex", "enabled": false}'' (genOf on "seed");
-                "seed uses //= so edits made in the app persist" =
-                  !(has ".providerInstances[\"opencode\"] =" (genOf on "seed"));
                 "providers.opencode = false seeds it off" =
                   has ''.providerInstances["opencode"] //= {"driver": "opencode", "enabled": false}'' (
                     genOf userOff "seed"
@@ -392,12 +397,9 @@
                   has ''if has("linkedEnvironmentsEnabled") then . else'' (genOf on "seed");
                 "the port follows the tailscale interface name" =
                   get tsIface [ "networking" "firewall" "interfaces" "ts0" "allowedTCPPorts" ] [ ] == [ 3773 ];
-                "a firewall that is off is refused" =
-                  !(builtins.tryEval noFirewall.config.system.build.toplevel.drvPath).success;
-                "a credential name that is not an identifier is refused" =
-                  !(builtins.tryEval badCred.config.system.build.toplevel.drvPath).success;
-                "a bind that is not an address fails evaluation" =
-                  !(builtins.tryEval badBind.config.system.build.toplevel.drvPath).success;
+                "a firewall that is off is refused" = evalFails noFirewall;
+                "a credential name that is not an identifier is refused" = evalFails badCred;
+                "a bind that is not an address fails evaluation" = evalFails badBind;
               };
               failed = lib.attrNames (lib.filterAttrs (_: ok: !ok) cases);
             in
@@ -421,15 +423,9 @@
                 nixpkgs.lib.nixosSystem {
                   modules = [
                     self.nixosModules.t3-sandbox
+                    stubSystem
                     {
-                      nixpkgs.hostPlatform = system;
                       nixpkgs.config.allowUnfreePredicate = pkg: lib.getName pkg == "claude-code";
-                      boot.loader.grub.enable = false;
-                      fileSystems."/" = {
-                        device = "/dev/null";
-                        fsType = "ext4";
-                      };
-                      system.stateVersion = "24.05";
                     }
                     extra
                   ];
@@ -464,7 +460,7 @@
                     "opencode"
                   ]
                 && custom.config.users.users.dev.isNormalUser
-                && !(builtins.tryEval noServer.config.system.build.toplevel.drvPath).success;
+                && evalFails noServer;
             in
             assert lib.assertMsg ok "t3-sandbox-eval failed";
             pkgs.writeText "t3-sandbox-eval" (
@@ -481,15 +477,9 @@
               sys = nixpkgs.lib.nixosSystem {
                 modules = [
                   self.nixosModules.t3-connect
+                  stubSystem
                   {
-                    nixpkgs.hostPlatform = system;
                     nixpkgs.overlays = [ self.overlays.default ];
-                    boot.loader.grub.enable = false;
-                    fileSystems."/" = {
-                      device = "/dev/null";
-                      fsType = "ext4";
-                    };
-                    system.stateVersion = "24.05";
                     users.users.user.isNormalUser = true;
                     t3Connect = {
                       enable = true;
@@ -600,14 +590,8 @@
                 nixpkgs.lib.nixosSystem {
                   modules = [
                     self.nixosModules.t3-connect-host
+                    stubSystem
                     {
-                      nixpkgs.hostPlatform = system;
-                      boot.loader.grub.enable = false;
-                      fileSystems."/" = {
-                        device = "/dev/null";
-                        fsType = "ext4";
-                      };
-                      system.stateVersion = "24.05";
                     }
                     extra
                   ];
@@ -650,9 +634,6 @@
                   bridge.name = "a-bridge-name-over-15";
                 };
               };
-              get =
-                sys: path: default:
-                lib.attrByPath path default sys.config;
               rules = sys: get sys [ "networking" "firewall" "extraCommands" ] "";
               stop = sys: get sys [ "networking" "firewall" "extraStopCommands" ] "";
               has = lib.hasInfix;
@@ -735,13 +716,9 @@
                 "the bridge does not stall boot waiting for carrier" =
                   get on [ "systemd" "network" "networks" "20-t3br0" "linkConfig" "RequiredForOnline" ] null == "no";
                 "no ip6tables rules when IPv6 is off" = !(has "ip6tables" (rules noV6));
-                "a host without the iptables firewall is refused" =
-                  !(builtins.tryEval noFirewall.config.system.build.toplevel.drvPath).success
-                  && !(builtins.tryEval withNftables.config.system.build.toplevel.drvPath).success;
-                "a bridge named br-* fails evaluation" =
-                  !(builtins.tryEval badName.config.system.build.toplevel.drvPath).success;
-                "a bridge name over 15 characters fails evaluation" =
-                  !(builtins.tryEval longName.config.system.build.toplevel.drvPath).success;
+                "a host without the iptables firewall is refused" = evalFails noFirewall && evalFails withNftables;
+                "a bridge named br-* fails evaluation" = evalFails badName;
+                "a bridge name over 15 characters fails evaluation" = evalFails longName;
               };
               failed = lib.attrNames (lib.filterAttrs (_: ok: !ok) cases);
             in

@@ -160,84 +160,70 @@ in
         multicast ranges. Everything else is forwarded and masqueraded.
       '';
     };
-
-    generated = lib.mkOption {
-      type = lib.types.attrsOf lib.types.str;
-      readOnly = true;
-      internal = true;
-      description = "The generated rule texts, exposed for the eval checks.";
-    };
   };
 
-  config = lib.mkMerge [
-    {
-      t3ConnectHost.generated = {
-        inherit firewall firewallStop;
-      };
-    }
-    (lib.mkIf cfg.enable {
-      assertions = [
-        {
-          assertion = config.networking.firewall.enable && !config.networking.nftables.enable;
-          message = "t3ConnectHost needs the iptables firewall: set networking.firewall.enable = true and leave networking.nftables.enable off. Without it the bridge forwards with no rules.";
-        }
-        {
-          assertion = !(lib.hasPrefix "br-" bridge);
-          message = "t3ConnectHost.bridge.name = \"${bridge}\" starts with br-, which NixOS hosts running docker trust for input.";
-        }
-        {
-          assertion = builtins.stringLength bridge <= 15;
-          message = "t3ConnectHost.bridge.name = \"${bridge}\" is longer than the 15 characters an interface name allows.";
-        }
-      ];
+  config = lib.mkIf cfg.enable {
+    assertions = [
+      {
+        assertion = config.networking.firewall.enable && !config.networking.nftables.enable;
+        message = "t3ConnectHost needs the iptables firewall: set networking.firewall.enable = true and leave networking.nftables.enable off. Without it the bridge forwards with no rules.";
+      }
+      {
+        assertion = !(lib.hasPrefix "br-" bridge);
+        message = "t3ConnectHost.bridge.name = \"${bridge}\" starts with br-, which NixOS hosts running docker trust for input.";
+      }
+      {
+        assertion = builtins.stringLength bridge <= 15;
+        message = "t3ConnectHost.bridge.name = \"${bridge}\" is longer than the 15 characters an interface name allows.";
+      }
+    ];
 
-      # networkd manages only the bridge and the taps; NetworkManager keeps everything else.
-      systemd.network.enable = true;
-      networking.networkmanager.unmanaged = lib.mkIf config.networking.networkmanager.enable [
-        "interface-name:${bridge}"
-        "interface-name:${cfg.tapMatch}"
-      ];
-      # dhcpcd (useDHCP defaults on in a generated config) would also run on the bridge and the taps,
-      # and DHCP uses packet sockets that netfilter never sees: a guest could push resolvers and routes.
-      networking.dhcpcd.denyInterfaces = [
-        bridge
-        cfg.tapMatch
-      ];
-      systemd.network.netdevs."20-${bridge}".netdevConfig = {
-        Kind = "bridge";
-        Name = bridge;
+    # networkd manages only the bridge and the taps; NetworkManager keeps everything else.
+    systemd.network.enable = true;
+    networking.networkmanager.unmanaged = lib.mkIf config.networking.networkmanager.enable [
+      "interface-name:${bridge}"
+      "interface-name:${cfg.tapMatch}"
+    ];
+    # dhcpcd (useDHCP defaults on in a generated config) would also run on the bridge and the taps,
+    # and DHCP uses packet sockets that netfilter never sees: a guest could push resolvers and routes.
+    networking.dhcpcd.denyInterfaces = [
+      bridge
+      cfg.tapMatch
+    ];
+    systemd.network.netdevs."20-${bridge}".netdevConfig = {
+      Kind = "bridge";
+      Name = bridge;
+    };
+    systemd.network.networks."20-${bridge}" = {
+      matchConfig.Name = bridge;
+      linkConfig.RequiredForOnline = "no";
+      address = [ "${address}/${lib.last (lib.splitString "/" subnet)}" ];
+      networkConfig = {
+        ConfigureWithoutCarrier = true;
+        LinkLocalAddressing = "no";
+        IPv6AcceptRA = false;
+        # Forwarding is checked on the ingress interface, so it is on for the bridge here and for the
+        # uplink through the global sysctl below. What a guest may reach is decided by t3-fwd.
+        IPv4Forwarding = true;
+        IPv6Forwarding = false;
       };
-      systemd.network.networks."20-${bridge}" = {
-        matchConfig.Name = bridge;
-        linkConfig.RequiredForOnline = "no";
-        address = [ "${address}/${lib.last (lib.splitString "/" subnet)}" ];
-        networkConfig = {
-          ConfigureWithoutCarrier = true;
-          LinkLocalAddressing = "no";
-          IPv6AcceptRA = false;
-          # Forwarding is checked on the ingress interface, so it is on for the bridge here and for the
-          # uplink through the global sysctl below. What a guest may reach is decided by t3-fwd.
-          IPv4Forwarding = true;
-          IPv6Forwarding = false;
-        };
-      };
-      systemd.network.networks."21-t3-taps" = {
-        matchConfig.Name = cfg.tapMatch;
-        linkConfig.RequiredForOnline = "no";
-        networkConfig.Bridge = bridge;
-        # Isolated ports reach the bridge's own address but not each other.
-        bridgeConfig.Isolated = true;
-      };
+    };
+    systemd.network.networks."21-t3-taps" = {
+      matchConfig.Name = cfg.tapMatch;
+      linkConfig.RequiredForOnline = "no";
+      networkConfig.Bridge = bridge;
+      # Isolated ports reach the bridge's own address but not each other.
+      bridgeConfig.Isolated = true;
+    };
 
-      # NAT needs routing on the uplink too, not only on the bridge: a reply from the internet enters
-      # on the uplink and is forwarded to the bridge after conntrack undoes the NAT, and the kernel
-      # checks forwarding on the ingress interface. A host with docker gets this by accident; a plain
-      # host does not, and guests would silently have no egress. What a guest may reach is decided by
-      # the mangle t3-fwd chain, not by this sysctl.
-      boot.kernel.sysctl."net.ipv4.ip_forward" = lib.mkDefault 1;
+    # NAT needs routing on the uplink too, not only on the bridge: a reply from the internet enters
+    # on the uplink and is forwarded to the bridge after conntrack undoes the NAT, and the kernel
+    # checks forwarding on the ingress interface. A host with docker gets this by accident; a plain
+    # host does not, and guests would silently have no egress. What a guest may reach is decided by
+    # the mangle t3-fwd chain, not by this sysctl.
+    boot.kernel.sysctl."net.ipv4.ip_forward" = lib.mkDefault 1;
 
-      networking.firewall.extraCommands = firewall;
-      networking.firewall.extraStopCommands = firewallStop;
-    })
-  ];
+    networking.firewall.extraCommands = firewall;
+    networking.firewall.extraStopCommands = firewallStop;
+  };
 }
