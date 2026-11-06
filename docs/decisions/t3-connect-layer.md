@@ -5,9 +5,9 @@ project: agent-env
 updated: 2026-11-06
 ---
 
-**Context.** A T3 Code client (the Mac app, a browser, the phone) reaches an agent sandbox when the
+**Context.** A T3 Code client (the desktop app, a browser, a phone) reaches an agent sandbox when the
 sandbox runs `t3 serve`, joins the user's own mesh, and the client's server links to it. The setup
-was built by hand for one host (`hosts/ws01-vms.nix` in a personal config flake) and proved live:
+was first built by hand in a private NixOS config and proved live:
 join, serve, a pairing credential read from the server output, and `t3 environment link` over the
 tailnet IPv6 address. Its parts are generic, and several are traps that cost hours: a path unit that
 never fires on virtiofs, `tailscale up` refusing without `--reset`, a refused client-sent tag, a
@@ -70,10 +70,10 @@ AI-gap self-test: a build that passes all checks but misbehaves would most likel
 join and the server (the node name applied after the server starts), seed a provider the user
 disabled, or open the port on every interface. The checks assert each.
 
-**Consequences.** The personal flake imports the layer in place of its own units and its built guest
+**Consequences.** A consumer flake imports the layer in place of its own units and its built guest
 paths change only by the unit text. The delegator helper runs on darwin, so its module is evaluated
 there even though the packages stay Linux only (see [linux-only](linux-only-no-macos.md)).
 
-**Set aside.** Putting the host network in sandy only (#677 covers sandy's own backend; this module is
+**Set aside.** Putting the host network in sandy only (sandy's own backend covers that case; this module is
 for NixOS hosts). Persisting the Tailscale node identity on the guest's disk: every boot is a new
 node, named by the injector, so no disk is assumed.

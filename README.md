@@ -58,7 +58,7 @@ feeds `extensions = "baked"`.
 
 ### The t3-connect layer
 
-A switchable layer for reaching a sandbox from a T3 Code client (the app, a browser, the phone) over your own
+A switchable layer for reaching a sandbox from a T3 Code client (the desktop app, a browser, a phone) over your own
 mesh, with no per-sandbox click. Off by default: `t3Connect.enable = false` adds nothing. The reasoning and the
 specification are in [`docs/decisions/t3-connect-layer.md`](docs/decisions/t3-connect-layer.md).
 
