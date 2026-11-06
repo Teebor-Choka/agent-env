@@ -11,11 +11,13 @@ tools="$(nix build nixpkgs#qemu nixpkgs#virtiofsd nixpkgs#nftables nixpkgs#iptab
 bb="$(nix build nixpkgs#pkgsStatic.busybox --no-link --print-out-paths)/bin/busybox"
 ip link show sandytap0 >/dev/null 2>&1 || { echo "sandytap0 missing: run sandy-net.sh up first" >&2; exit 1; }
 
+# systemd-run resolves the command in sudo's secure_path, not in --setenv=PATH, so the binary is
+# called by absolute path. The PATH below is for the tools sandy starts (qemu, virtiofsd, nft).
 sudo systemd-run --unit="$UNIT" --collect \
   --setenv=HOME="$HOME" \
   --setenv=PATH="${tools}${SANDY_DIR}/target/release:/run/current-system/sw/bin" \
   --setenv=SANDY_NETWORK=nic --setenv=SANDY_TAP=sandytap0 \
-  sandy run "$SANDY_DIR/nix/guest#topologies.x86_64-linux.qemu-t3" \
+  "$SANDY_DIR/target/release/sandy" run "$SANDY_DIR/nix/guest#topologies.x86_64-linux.qemu-t3" \
     --cpu 2 --mem 2304 --timeout "$JOB_TIMEOUT" \
     --allow 0.0.0.0/0:443 --allow 0.0.0.0/0:53 \
     --credential external-actor --cred-capability read-code \
