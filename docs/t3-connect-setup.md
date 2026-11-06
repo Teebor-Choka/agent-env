@@ -76,16 +76,70 @@ the last boot starts one join with an expired key. The next injection replaces i
 
 ## 4. Delegator (the machine with the T3 app)
 
-| Setting | Value | If missing |
-|---|---|---|
-| beta flag "linked environments" | on, in the app | `t3 environment link` is refused |
-| `t3` CLI version | the same as the app's server (`serverVersion` in `<base>/userdata/server-runtime.json`) | `t3-link-vm` refuses: a newer database written by an older CLI loses data |
-| base directory | the app's (default `~/.t3`) | the link lands in a different database |
-| ssh | key access to the guest as `t3Connect.user` over the mesh | no pairing code can be minted |
-| access mode | `full-access` (the `t3-link-vm` default) | a sandbox job stops at approvals; a child mode above the link mode is denied |
+The delegator is the T3 server of your own app. It links to a guest, so the guest shows up in the app with no
+pairing click. `t3-link-vm` does the linking. Install it in either of two ways.
 
-Link a guest: `t3-link-vm <ssh-target> "http://[<guest ipv6>]:3773"`. The pairing code is passed on the `t3`
-command line for the length of the call (the CLI takes it no other way) and lives 5 minutes.
+```nix
+# home-manager
+imports = [ inputs.agent-env.homeModules.t3-connect-delegator ];
+nixpkgs.overlays = [ inputs.agent-env.overlays.default ];     # provides pkgs.t3-server, the default CLI
+t3Connect.delegator.enable = true;
+# t3Connect.delegator.package = <a t3 CLI built for the app's version>;
+
+# without home-manager: install packages.<system>.t3-link-vm; set T3_BIN to pick another CLI
+```
+
+### Before the first link
+
+| # | Requirement | How to check |
+|---|---|---|
+| 1 | The app is running. The script reads the app's version from `<base>/userdata/server-runtime.json` (`<base>` is `~/.t3` unless the app uses another directory; pass it with `--base-dir`). | `jq -r .serverVersion <base>/userdata/server-runtime.json` prints a version |
+| 2 | The `t3` CLI has the same version as the app's server. | `t3 --version` prints `t3 v<that version>` |
+| 3 | The beta flag for linked environments is on in the app. The guest turns its own flag on at start. | the app's settings |
+| 4 | The guest is up: joined to the mesh and `t3-serve` is active. | `headscale nodes list`, or `systemctl is-active t3-serve` on the guest |
+| 5 | Non-interactive ssh works to the guest as `t3Connect.user`. The script uses `BatchMode`, so an unknown host key or a password prompt fails. Log in once by hand to accept the host key. | `ssh -o BatchMode=yes <target> true` exits 0 |
+| 6 | You know the guest's mesh IPv6 address. | `tailscale ip -6 <node name>` |
+
+### Link a guest
+
+1. Run `t3-link-vm <ssh-target> "http://[<guest ipv6>]:3773"`.
+2. The script does these steps in order and stops at the first failure:
+   1. It compares the CLI version with the app's `serverVersion`.
+   2. It runs `ssh -o BatchMode=yes -- <ssh-target> t3-pair 5m delegator` and reads the code from the output.
+   3. It accepts the code only if the output is one line of 6 to 128 characters from `A-Z a-z 0-9 _ -`.
+   4. It runs `t3 environment link <url> --pairing-code <code> --access <mode> --base-dir <base>`.
+   5. It prints the result with the code replaced by `<code>`, and exits with the link command's status.
+3. Check the link: `t3 environment list --base-dir <base>` shows the guest, and the app lists it under linked environments.
+
+Options: `--access MODE` (`read-only`, `approval-required`, `auto-accept-edits`, `auto`, `full-access`; default
+`full-access`), `--base-dir DIR` (default `~/.t3`), `--force` (go on when the versions cannot be compared; a
+version mismatch is still refused), `--` (end of options, so a target that starts with a dash is a host).
+`T3_BIN` overrides the CLI path.
+
+The default is `full-access` on purpose. The sandbox is the isolation boundary and runs without a person to
+approve. A session launched with a mode above the link's mode is refused (`runtime_mode_escalation_denied`).
+Link only guests you accept being driven without approvals.
+
+The pairing code is one-time and valid for 5 minutes. The CLI takes it only as an argument, so it shows in the
+process list of the delegator for the length of the link call. The script never prints it.
+
+### Remove a link
+
+The layer does not wrap this. Run `t3 environment list --base-dir <base>` to find the entry, and
+`t3 environment unlink --help` for the argument form. A guest that went away stays listed as offline until you
+unlink it.
+
+### Errors
+
+| Message | Cause and fix |
+|---|---|
+| `the t3 CLI is X but the delegator is Y; use a CLI built for Y` | Set `t3Connect.delegator.package` or `T3_BIN` to a CLI of version Y. |
+| `cannot compare versions: no serverVersion in …/server-runtime.json (is the delegator running?)` | Start the app. Use `--force` only when you know the versions match. |
+| `could not mint a code on <target>` | The ssh step failed. Run `ssh -o BatchMode=yes <target> true`: check the key, the host key, the user and that the guest is up. |
+| `<target> did not return a pairing code` | The output was not one plain line. A login banner or an ssh warning is the usual cause. Remove a server banner with `Banner none` in the guest's sshd config. Silence ssh's own warnings with `LogLevel ERROR` in the client's ssh config entry for the host. |
+| `t3-pair: run as <user> (ssh in as that user)` | The ssh user is not `t3Connect.user`. |
+| `t3-pair: no code (is t3-serve running, and are you the <user> user?)` | The server has not started: check that the host wrote `.ready` and that `t3-serve` is active. |
+| the link is refused for the URL | Use the guest's tailnet IPv6 address in `http://[…]:3773`. Plain http is accepted only for loopback, `.ts.net` names and `fd7a:115c:a1e0::/48`. |
 
 ## 5. Check the setup
 
