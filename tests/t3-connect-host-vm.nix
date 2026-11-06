@@ -152,8 +152,17 @@
     with subtest("a connection the host starts to a guest works, and the reply gets back to the host"):
         # The reply is a new packet from the guest into the host's INPUT chain; only the ESTABLISHED
         # return rule lets it through.
-        host.succeed(in_guest("g1", "sh -c 'cd /tmp && python3 -m http.server 9000 --bind 192.168.83.10 >/dev/null 2>&1 &'"))
-        host.wait_until_succeeds("curl -s --max-time 3 -o /dev/null http://192.168.83.10:9000/")
+        # A transient unit, not `&`: a background process keeps the test driver's shell open. The unit has a
+        # minimal PATH, so the interpreter path is resolved here.
+        host.succeed("systemd-run --unit=g1-http " + in_guest("g1", "$(command -v python3) -m http.server 9000 --bind 192.168.83.10 --directory /tmp"))
+        for attempt in range(10):
+            if host.execute("curl -s --max-time 3 -o /dev/null http://192.168.83.10:9000/")[0] == 0:
+                break
+            host.execute("sleep 1")
+        else:
+            print(host.execute("systemctl status g1-http --no-pager; ip -n g1 -br addr; ip -n g1 route; ip route; "
+                               "ip netns exec g1 ss -ltn; iptables -t mangle -L PREROUTING -v -n; iptables -L t3-in -v -n")[1])
+            raise Exception("the host cannot reach a server in a guest")
 
     with subtest("a new connection from outside into a guest is dropped"):
         # `world` routes the guest subnet via the host, as a LAN host would.
@@ -163,6 +172,14 @@
     with subtest("a firewall reload keeps one copy of every rule"):
         host.succeed("systemctl reload firewall.service")
         host.succeed("systemctl reload firewall.service")
+        # A reload may run the stop commands first, which hides a rule that is added twice. Running the
+        # start script again with no stop in between is the case the `-C ... ||` guards protect.
+        start = host.succeed(
+            "systemctl show firewall.service -p ExecStart --value | grep -o '/nix/store/[^ ;]*firewall-start' | head -1"
+        ).strip()
+        assert start, "could not find the firewall start script"
+        host.succeed(start)
+        host.succeed(start)
         for table, chain in [("", "t3-in"), ("-t mangle", "t3-fwd"), ("-t nat", "t3-nat")]:
             n = host.succeed(f"iptables {table} -S | grep -c '^-N {chain}$'").strip()
             assert n == "1", f"{chain} defined {n} times"
