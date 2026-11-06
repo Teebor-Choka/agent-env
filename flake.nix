@@ -160,6 +160,7 @@
           agentic-tools = agenticToolsBySystem.${system};
           t3-link-vm = import ./modules/t3-connect/link-vm.nix { pkgs = t3Pkgs; };
           t3-unlink-vm = import ./modules/t3-connect/unlink-vm.nix { pkgs = t3Pkgs; };
+          t3-sandy = import ./modules/t3-connect/sandy.nix { pkgs = t3Pkgs; };
         }
         # Runtime proof of the host network module in two VMs. Needs KVM, so it is a package to run by
         # hand on a KVM host (`nix build .#t3-connect-host-test -L`), not a check.
@@ -588,6 +589,36 @@
               ''
                 bash ${./tests/t3-link-vm.sh} ${linkVm}/bin/t3-link-vm
                 bash ${./tests/t3-unlink-vm.sh} ${unlinkVm}/bin/t3-unlink-vm
+                touch "$out"
+              '';
+
+          # t3-sandy: the whole link life cycle against a fake sandy host and a fake app CLI, and the guest
+          # script against fake t3 tools and a real busybox httpd (tests/t3-sandy*.sh).
+          t3-sandy =
+            let
+              stubT3 = pkgs.writeShellScriptBin "t3" "";
+              sandyWrapper = import ./modules/t3-connect/sandy.nix {
+                inherit pkgs;
+                t3 = stubT3;
+              };
+            in
+            pkgs.runCommand "t3-sandy-test"
+              {
+                nativeBuildInputs = [
+                  sandyWrapper
+                  pkgs.bash
+                  pkgs.busybox
+                  pkgs.curl
+                  pkgs.jq
+                  pkgs.gnused
+                  pkgs.coreutils
+                  pkgs.shellcheck
+                ];
+              }
+              ''
+                shellcheck ${./modules/t3-connect/sandy/guest.sh} ${./modules/t3-connect/sandy/start.sh}
+                bash ${./tests/t3-sandy-guest.sh} ${./modules/t3-connect/sandy/guest.sh}
+                bash ${./tests/t3-sandy.sh} ${sandyWrapper}/bin/t3-sandy
                 touch "$out"
               '';
 

@@ -164,3 +164,56 @@ listed as offline until you unlink it.
 | mode | the link line shows `full-access` | yes |
 
 Nothing removes a link when a guest goes away. Remove it with `t3-unlink-vm`.
+
+## 6. Sandy guests (`t3-sandy`)
+
+A guest started by `sandy run` has no mesh, no ssh and no `t3-pair`. `t3-sandy` runs the whole life of such a
+guest from the machine with the T3 app: start, link, hold, unlink. It is `packages.<system>.t3-sandy`.
+
+```
+t3-sandy [--host ws01] [--sandy-dir '$HOME/sandy-b7'] [--base-dir ~/.t3] [--access full-access] \
+         [--job-timeout 604800] [--ready-timeout 300] [--force] [--reap-only | --no-reap]
+```
+
+| Step | What happens |
+|---|---|
+| 0 | It unlinks the entries of earlier runs whose job has ended (see "Leftovers"). |
+| 1 | It checks the CLI version as `t3-link-vm` does. |
+| 2 | It uploads `sandy/guest.sh` and `sandy/start.sh` to the sandy host and runs `start.sh` over `ssh -t`. `start.sh` asks for the sudo password and starts the guest as the unit `sandbox-<6 hex>`. |
+| 3 | It finds the new record in `~/.sandy/jobs` on the sandy host. |
+| 4 | The guest starts `t3 serve`, mints a one-time code and publishes it. The wrapper fetches it from the guest's neighbour address on `sbr0`. |
+| 5 | It opens `ssh -N -L 127.0.0.1:<port>:<guest>:3773` and waits until the guest answers on `http://localhost:<port>`. |
+| 6 | It runs `t3 environment link http://localhost:<port> --pairing-code <code> --access <mode>` and records the environment id and job id in `~/.local/state/t3-sandy/`. |
+| 7 | It runs `sandy wait` until the job record has a result. A dropped ssh connection starts the wait again. |
+| 8 | On the end of the job, on Ctrl-C, or on SIGTERM or SIGHUP, it stops the job with `sandy kill`. If the job still runs, it runs `sudo systemctl stop <unit>` over `ssh -t`. It then runs `t3-unlink-vm` for the environment and removes the tunnel. |
+
+The exit status is 1 when an unlink fails, whatever else happened. A signal gives 130 or 143 when the unlink worked.
+
+### The pairing code channel
+
+The guest cannot show the code to the host before the job ends, so `guest.sh` publishes it. A static busybox
+(`--input busybox`, built on the sandy host) serves a directory that holds one file, named by a random 128-bit
+nonce that the wrapper passes in `T3_NONCE`, on port 3774. Any other path is a 404. The file is deleted and the
+server stops after 5 minutes. The code is one-time and valid for 5 minutes. A local user of the sandy host who
+learns the nonce, which is visible in the unit's environment, can read the code. Such a user already controls the
+guest's network.
+
+### Leftovers
+
+An environment is a leftover when the app lists it as `unreachable` and its job record has a result. The wrapper
+unlinks it at the start of every run. `--reap-only` does only this. An entry that `t3-sandy` did not create has
+no state file and is never touched. A state file with no matching entry is removed.
+
+### Prerequisites
+
+1. `ssh -o BatchMode=yes <host> true` works from the Mac.
+2. On the sandy host: the `sandy` binary at `<sandy-dir>/target/release/sandy`, `sandytap0` (run `sandy-net.sh up`),
+   `jq`, `curl`, `nix`, and sudo for the account.
+3. The `t3` CLI has the version of the app, as in section 4.
+
+### Not verified live
+
+Verified: the wrapper against a fake sandy host and CLI, and `guest.sh` against fake t3 tools and a real busybox
+httpd (`checks.x86_64-linux.t3-sandy`). Not verified until the first live start: that `sandy kill` works without
+root, that the guest's `t3` has `auth pairing create` (the script falls back to `t3 pair`), that the sandy
+host reaches port 3774 of the guest, and that `--env` reaches the guest script.
