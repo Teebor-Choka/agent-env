@@ -16,6 +16,7 @@ let
   inherit (cfg) secretsDir;
   home = config.users.users.${cfg.user}.home;
   marker = "${secretsDir}/${cfg.ready.marker}";
+  hostnameFile = "${secretsDir}/${cfg.mesh.hostnameFile}";
   has = harness: builtins.elem harness cfg.harnesses;
   boolStr = b: if b then "true" else "false";
 
@@ -24,23 +25,26 @@ let
   # wins over that default.
   seeded = (lib.optionalAttrs (has "opencode") { opencode = true; }) // cfg.providers;
 
-  # `//=` adds an entry only when absent, so a change made in the app persists across restarts.
+  # Names go through toJSON so a hyphen or a quote cannot change the jq program. `//=` adds an entry
+  # only when absent. The linked-environments flag is set only when the key is missing: `//=` would
+  # also replace an explicit `false`, and a user who turned the beta off in the app keeps it off.
   seedFilter =
     let
       parts =
-        lib.optional cfg.linkedEnvironments ".linkedEnvironmentsEnabled = true"
+        lib.optional cfg.linkedEnvironments ''(if has("linkedEnvironmentsEnabled") then . else .linkedEnvironmentsEnabled = true end)''
         ++ lib.mapAttrsToList (
-          name: on: ''.providerInstances.${name} //= {"driver": "${name}", "enabled": ${boolStr on}}''
+          name: on:
+          ''.providerInstances[${builtins.toJSON name}] //= {"driver": ${builtins.toJSON name}, "enabled": ${boolStr on}}''
         ) seeded;
     in
     if parts == [ ] then "." else lib.concatStringsSep " | " parts;
 
   # Linked environments is a beta, off by default, and a link needs it on at both ends.
   seedScript = ''
-    f=${cfg.baseDir}/userdata/settings.json
+    f=${lib.escapeShellArg "${cfg.baseDir}/userdata/settings.json"}
     mkdir -p "$(dirname "$f")"
     [ -s "$f" ] || echo '{}' > "$f"
-    ${pkgs.jq}/bin/jq '${seedFilter}' "$f" > "$f.new" && mv -f "$f.new" "$f"
+    ${pkgs.jq}/bin/jq ${lib.escapeShellArg seedFilter} "$f" > "$f.new" && mv -f "$f.new" "$f"
   '';
 
   # Reads each credential at start and exports it for t3 and its children. The agent can read its own
@@ -61,25 +65,34 @@ let
   # A path unit never fires here: virtiofs does not deliver inotify events for files the host writes
   # after boot. The stamp is the marker's mtime, so a re-inject (new secrets, new join key) restarts
   # the units and a quiet poll does nothing.
+  restartUnits = lib.concatStringsSep " " (
+    [ "t3-serve.service" ]
+    ++ lib.optionals cfg.mesh.enable [
+      "tailscaled-autoconnect.service"
+      "t3-hostname.service"
+    ]
+  );
   readyScript = ''
-    [ -e ${marker} ] || exit 0
-    stamp=$(stat -c %Y ${marker})
+    [ -e ${lib.escapeShellArg marker} ] || exit 0
+    stamp=$(stat -c %Y.%i ${lib.escapeShellArg marker})
     [ "$(cat /run/t3-ready-stamp 2>/dev/null)" = "$stamp" ] && exit 0
     echo "$stamp" > /run/t3-ready-stamp
-    systemctl restart --no-block t3-serve.service${lib.optionalString cfg.mesh.enable " tailscaled-autoconnect.service"}
-    ${lib.optionalString cfg.mesh.enable "systemctl restart --no-block t3-hostname.service"}
+    # One call: the jobs share a transaction, so After= orders them and t3-serve starts after the join
+    # and the node rename. Two calls would let t3-serve start first.
+    systemctl restart --no-block ${restartUnits}
   '';
 
   # No persisted node identity: every boot is a new node. The injector picks a unique name and writes
   # it to `secretsDir`, so the orchestrator knows the name before the guest joins.
   hostnameScript = ''
-    [ -s ${secretsDir}/${cfg.mesh.hostnameFile} ] || exit 0
-    tailscale set --hostname="$(cat ${secretsDir}/${cfg.mesh.hostnameFile})"
+    [ -s ${lib.escapeShellArg hostnameFile} ] || exit 0
+    tailscale set --hostname="$(cat ${lib.escapeShellArg hostnameFile})"
   '';
 
   # `t3 pair` prints a block of text; a delegator wants only the code. It must run as the t3 user: the
   # code is minted in that user's data directory. The code is one-time and short-lived (default 5 m).
   pairScript = ''
+    [ "$(id -un)" = "${cfg.user}" ] || { echo "t3-pair: run as ${cfg.user} (ssh in as that user): a code minted as another user can leave files t3-serve cannot use" >&2; exit 1; }
     tok=$(${cfg.package}/bin/t3 pair --base-dir ${cfg.baseDir} --ttl "''${1:-5m}" --label "''${2:-delegator}" 2>/dev/null \
       | sed -n 's/^Token: //p')
     [ -n "$tok" ] || { echo "t3-pair: no code (is t3-serve running, and are you the ${cfg.user} user?)" >&2; exit 1; }
@@ -100,7 +113,10 @@ in
       type = lib.types.package;
       default = pkgs.t3-server;
       defaultText = lib.literalExpression "pkgs.t3-server";
-      description = "The headless t3 build (from `overlays.default`).";
+      description = ''
+        The headless t3 build (`pkgs.t3-server` from `overlays.default`). Its wrapper provides claude, codex,
+        git and gh. A consumer that passes its own `pkgs` (so the overlay is not applied) must set it.
+      '';
     };
 
     port = lib.mkOption {
@@ -121,8 +137,8 @@ in
 
     baseDir = lib.mkOption {
       type = lib.types.str;
-      default = "/home/${cfg.user}/.t3";
-      defaultText = lib.literalExpression ''"/home/''${config.t3Connect.user}/.t3"'';
+      default = "${config.users.users.${cfg.user}.home}/.t3";
+      defaultText = lib.literalExpression ''"''${config.users.users.''${config.t3Connect.user}.home}/.t3"'';
       description = "The t3 data directory (`--base-dir`).";
     };
 
@@ -150,7 +166,10 @@ in
         ]
       );
       default = [ "claude" ];
-      description = "Harness CLIs present in the image. Each is put on the server's PATH.";
+      description = ''
+        Harness CLIs present in the image. The t3 wrapper already provides claude and codex; opencode is
+        added to the server unit's PATH. The list also decides which provider instances are seeded.
+      '';
     };
 
     providers = lib.mkOption {
@@ -237,14 +256,28 @@ in
               message = "t3Connect.bind = \"${cfg.bind}\" is not an IPv4 or IPv6 address (use \"::\" for all).";
             }
             {
+              assertion = lib.all (var: builtins.match "[A-Za-z_][A-Za-z0-9_]*" var != null) (
+                lib.attrNames cfg.credentials
+              );
+              message = "t3Connect.credentials: every key must be a valid environment variable name.";
+            }
+            {
+              assertion = lib.all (file: builtins.match "[A-Za-z0-9._-]+" file != null) (
+                lib.attrValues cfg.credentials
+              );
+              message = "t3Connect.credentials: every value must be a plain file name in secretsDir (no slash).";
+            }
+            {
+              assertion = config.networking.firewall.enable;
+              message = "t3Connect needs networking.firewall.enable = true: t3 binds ${cfg.bind}, and only the firewall limits the port to the mesh interface.";
+            }
+            {
               assertion = !cfg.mesh.enable || lib.hasPrefix "https://" cfg.mesh.loginServer;
               message = "t3Connect.mesh.loginServer must be an https URL when t3Connect.mesh.enable is set.";
             }
           ];
 
           nixpkgs.overlays = [ self.overlays.default ];
-          # claude-code is the only unfree package the server wrapper pulls in.
-          nixpkgs.config.allowUnfreePredicate = lib.mkDefault (pkg: lib.getName pkg == "claude-code");
 
           # For a delegator that links this guest: `ssh <guest> t3-pair` prints a one-time code.
           environment.systemPackages = [ (pkgs.writeShellScriptBin "t3-pair" pairScript) ];
@@ -329,7 +362,9 @@ in
             script = hostnameScript;
           };
           # t3 is reachable from the mesh only; the coordination server's policy further limits who.
-          networking.firewall.interfaces.tailscale0.allowedTCPPorts = [ cfg.port ];
+          networking.firewall.interfaces.${config.services.tailscale.interfaceName}.allowedTCPPorts = [
+            cfg.port
+          ];
         })
       ]
     ))

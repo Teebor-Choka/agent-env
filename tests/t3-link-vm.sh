@@ -77,32 +77,52 @@ new_env
 rc=$(run --access read-only vm1 http://x:3773)
 grep -q -- "--access read-only" "$LOG" && ok "a chosen access mode is used" || bad "a chosen access mode is used"
 
-# 6. no runtime file: the version cannot be compared, so it warns and goes on
+# 6. the version cannot be compared: refuse, unless forced
 new_env
 rm "$TMP/base/userdata/server-runtime.json"
 rc=$(run vm1 http://x:3773)
-[ "$rc" = 0 ] && ok "links when the delegator has not started" || bad "links when the delegator has not started (rc=$rc)"
-grep -qi "cannot compare\|not running\|no runtime" "$TMP/err" && ok "it warns that the version was not compared" || bad "it warns that the version was not compared"
+[ "$rc" != 0 ] && ok "refuses when the delegator has not started" || bad "refuses when the delegator has not started"
+grep -q "^ssh " "$LOG" && bad "no code is minted when versions cannot be compared" || ok "no code is minted when versions cannot be compared"
+new_env
+echo '{}' > "$TMP/base/userdata/server-runtime.json"
+rc=$(run vm1 http://x:3773)
+[ "$rc" != 0 ] && ok "refuses a runtime file with no version" || bad "refuses a runtime file with no version"
+new_env
+rm "$TMP/base/userdata/server-runtime.json"
+rc=$(run --force vm1 http://x:3773)
+[ "$rc" = 0 ] && ok "--force links without a version to compare" || bad "--force links without a version to compare (rc=$rc)"
+grep -q -- "--force" "$TMP/err" && ok "--force says it skipped the comparison" || bad "--force says it skipped the comparison"
+# a mismatch is refused even with --force
+new_env
+export FAKE_CLI_VERSION=0.1.6
+rc=$(run --force vm1 http://x:3773)
+[ "$rc" != 0 ] && ok "--force does not override a version mismatch" || bad "--force does not override a version mismatch"
 
 # 7. missing arguments are a usage error
 new_env
 rc=$("$SUT" >/dev/null 2>"$TMP/err"; echo $?)
 [ "$rc" = 2 ] && ok "no arguments is a usage error (exit 2)" || bad "no arguments is a usage error (rc=$rc)"
 
-# 8. a code with characters that are special to sed is still redacted
+# 8. anything that is not one plain code is refused before a link
+for odd in 'a/b&c.d' 'short' ; do
+  new_env
+  export FAKE_SSH_OUT="$odd"
+  rc=$(run vm1 http://x:3773)
+  [ "$rc" != 0 ] && ok "refuses the code '$odd'" || bad "refuses the code '$odd'"
+  grep -q "environment link" "$LOG" && bad "nothing is linked for the code '$odd'" || ok "nothing is linked for the code '$odd'"
+done
 new_env
-export FAKE_SSH_OUT='a/b&c.d' FAKE_ECHO='a/b&c.d'
+export FAKE_SSH_OUT=$'Welcome to the guest\nCODE-s3cret-123'
 rc=$(run vm1 http://x:3773)
-[ "$rc" = 0 ] && ok "links with an unusual code" || bad "links with an unusual code (rc=$rc)"
-if grep -qF 'a/b&c.d' "$TMP/out" "$TMP/err"; then bad "an unusual code is never printed"; else ok "an unusual code is never printed"; fi
-grep -q "<code>" "$TMP/out" && ok "an unusual code is redacted" || bad "an unusual code is redacted"
+[ "$rc" != 0 ] && ok "refuses a login banner before the code" || bad "refuses a login banner before the code"
+grep -q "environment link" "$LOG" && bad "nothing is linked after a banner" || ok "nothing is linked after a banner"
 
 # 9. an ssh target that looks like an option is not read as one
 new_env
 
 new_env
 rc=$("$SUT" --base-dir "$TMP/base" -- -oProxyCommand=evil http://x:3773 >"$TMP/out" 2>"$TMP/err"; echo $?)
-grep -q "^ssh -- -oProxyCommand=evil t3-pair" "$LOG" && ok "an option-like target comes after --" || bad "an option-like target comes after --"
+grep -q "^ssh -o BatchMode=yes -- -oProxyCommand=evil t3-pair" "$LOG" && ok "an option-like target comes after --, and ssh never prompts" || bad "an option-like target comes after --, and ssh never prompts"
 
 # 10. the link command's failure is the script's failure
 new_env

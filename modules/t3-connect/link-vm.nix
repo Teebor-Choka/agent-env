@@ -5,7 +5,12 @@
 #
 # `t3` here is the delegator's own CLI: it writes into the delegator's database, so it must be the
 # delegator's version. A newer database makes an older CLI warn that migrations are unknown and
-# skipped; the script refuses instead.
+# skipped; the script refuses instead. It also refuses when the versions cannot be compared (the
+# delegator is not running, or its runtime file has no version) unless `--force` is given.
+#
+# The code is passed to `t3 environment link --pairing-code`, the only way the CLI takes it, so it
+# is visible in the delegator's process list for the length of that call. It is one-time and lives
+# five minutes.
 {
   pkgs,
   t3 ? pkgs.t3-server,
@@ -19,7 +24,7 @@ pkgs.writeShellApplication {
   ];
   text = ''
     usage() {
-      echo "usage: t3-link-vm [--access MODE] [--base-dir DIR] <ssh-target> <url>" >&2
+      echo "usage: t3-link-vm [--access MODE] [--base-dir DIR] [--force] [--] <ssh-target> <url>" >&2
       echo "  MODE: read-only, approval-required, auto-accept-edits, auto, full-access (default)" >&2
       exit 2
     }
@@ -28,10 +33,12 @@ pkgs.writeShellApplication {
     # a lower mode makes a delegated full-access launch fail (runtime_mode_escalation_denied).
     access=full-access
     base="$HOME/.t3"
+    force=0
     while [ $# -gt 0 ]; do
       case "$1" in
         --access) access="''${2:?--access needs a value}"; shift 2 ;;
         --base-dir) base="''${2:?--base-dir needs a value}"; shift 2 ;;
+        --force) force=1; shift ;;
         -h | --help) usage ;;
         --) shift; break ;;
         -*) echo "t3-link-vm: unknown flag $1" >&2; usage ;;
@@ -45,23 +52,28 @@ pkgs.writeShellApplication {
 
     cli=$("$t3" --version | sed 's/^t3 v//')
     runtime="$base/userdata/server-runtime.json"
-    if [ -f "$runtime" ]; then
-      server=$(jq -r '.serverVersion // empty' "$runtime")
-      if [ -n "$server" ] && [ "$server" != "$cli" ]; then
+    server=""
+    [ -f "$runtime" ] && server=$(jq -r '.serverVersion // empty' "$runtime")
+    if [ -n "$server" ]; then
+      if [ "$server" != "$cli" ]; then
         echo "t3-link-vm: the t3 CLI is $cli but the delegator is $server; use a CLI built for $server" >&2
         exit 1
       fi
+    elif [ "$force" = 1 ]; then
+      echo "t3-link-vm: cannot compare versions (no serverVersion in $runtime); going on because of --force" >&2
     else
-      echo "t3-link-vm: no $runtime (the delegator is not running); cannot compare versions" >&2
+      echo "t3-link-vm: cannot compare versions: no serverVersion in $runtime (is the delegator running?); start it, or pass --force" >&2
+      exit 1
     fi
 
     # `--` so a target that starts with a dash is a host, never an ssh option.
-    code=$(ssh -- "$target" t3-pair 5m delegator) || {
+    code=$(ssh -o BatchMode=yes -- "$target" t3-pair 5m delegator) || {
       echo "t3-link-vm: could not mint a code on $target" >&2
       exit 1
     }
-    [ -n "$code" ] || {
-      echo "t3-link-vm: $target returned an empty code" >&2
+    # Exactly one line of plain characters: anything else (a login banner, two lines) is not a code.
+    [[ "$code" =~ ^[A-Za-z0-9_-]{6,128}$ ]] || {
+      echo "t3-link-vm: $target did not return a pairing code" >&2
       exit 1
     }
 

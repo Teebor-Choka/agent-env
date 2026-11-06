@@ -131,6 +131,9 @@
       # The t3-connect layer (docs/decisions/t3-connect-layer.md), guest side: off unless
       # `t3Connect.enable`.
       nixosModules.t3-connect = import ./modules/t3-connect/guest.nix { inherit self; };
+      # The whole t3 guest in one import: `sandbox` plus `t3-connect`, wired together. Set
+      # `t3Connect.mesh.loginServer`; import it instead of the two it combines.
+      nixosModules.t3-sandbox = import ./modules/t3-connect/sandbox.nix { inherit self; };
       # The same layer's host side, optional and separate: a bridge, NAT and a firewall that give
       # guests public egress only. A guest never imports it.
       nixosModules.t3-connect-host = import ./modules/t3-connect/host.nix { inherit self; };
@@ -284,6 +287,26 @@
                 };
               };
               noMesh = evalWith { t3Connect.enable = true; };
+              noFirewall = evalWith {
+                networking.firewall.enable = false;
+                t3Connect.enable = true;
+              };
+              badCred = evalWith {
+                t3Connect = {
+                  enable = true;
+                  credentials."BAD NAME" = "file";
+                };
+              };
+              tsIface = evalWith {
+                services.tailscale.interfaceName = "ts0";
+                t3Connect = {
+                  enable = true;
+                  mesh = {
+                    enable = true;
+                    loginServer = "https://mesh.example.net";
+                  };
+                };
+              };
               badBind = evalWith {
                 t3Connect = {
                   enable = true;
@@ -320,12 +343,12 @@
                   == [ "claude-oauth-token:/run/secrets/claude-oauth-token" ];
                 "seed enables linked environments" = has ".linkedEnvironmentsEnabled = true" (genOf on "seed");
                 "seed adds opencode enabled and codex off" =
-                  has ''.providerInstances.opencode //= {"driver": "opencode", "enabled": true}'' (genOf on "seed")
-                  && has ''.providerInstances.codex //= {"driver": "codex", "enabled": false}'' (genOf on "seed");
+                  has ''.providerInstances["opencode"] //= {"driver": "opencode", "enabled": true}'' (genOf on "seed")
+                  && has ''.providerInstances["codex"] //= {"driver": "codex", "enabled": false}'' (genOf on "seed");
                 "seed uses //= so edits made in the app persist" =
-                  !(has ".providerInstances.opencode =" (genOf on "seed"));
+                  !(has ".providerInstances[\"opencode\"] =" (genOf on "seed"));
                 "providers.opencode = false seeds it off" =
-                  has ''.providerInstances.opencode //= {"driver": "opencode", "enabled": false}'' (
+                  has ''.providerInstances["opencode"] //= {"driver": "opencode", "enabled": false}'' (
                     genOf userOff "seed"
                   );
                 "mesh join reads the key from the secrets directory" =
@@ -360,6 +383,19 @@
                   has "t3 pair --base-dir /home/user/.t3" (genOf on "pair")
                   && has "sed -n 's/^Token: //p'" (genOf on "pair")
                   && builtins.any (p: lib.getName p == "t3-pair") (get on [ "environment" "systemPackages" ] [ ]);
+                "the poller restarts the server, the join and the rename in one call" =
+                  has "systemctl restart --no-block t3-serve.service tailscaled-autoconnect.service t3-hostname.service" (
+                    genOf on "ready"
+                  );
+                "t3-pair refuses to run as another user" = has ''[ "$(id -un)" = "user" ]'' (genOf on "pair");
+                "the seed keeps an app-side opt-out of linked environments" =
+                  has ''if has("linkedEnvironmentsEnabled") then . else'' (genOf on "seed");
+                "the port follows the tailscale interface name" =
+                  get tsIface [ "networking" "firewall" "interfaces" "ts0" "allowedTCPPorts" ] [ ] == [ 3773 ];
+                "a firewall that is off is refused" =
+                  !(builtins.tryEval noFirewall.config.system.build.toplevel.drvPath).success;
+                "a credential name that is not an identifier is refused" =
+                  !(builtins.tryEval badCred.config.system.build.toplevel.drvPath).success;
                 "a bind that is not an address fails evaluation" =
                   !(builtins.tryEval badBind.config.system.build.toplevel.drvPath).success;
               };
@@ -376,13 +412,174 @@
               )
             );
 
+          # nixosModules.t3-sandbox: the one-import guest. It follows the sandbox's user and tools, turns the
+          # mesh on, evaluates to a whole system, and fails without a login server.
+          t3-sandbox-eval =
+            let
+              evalWith =
+                extra:
+                nixpkgs.lib.nixosSystem {
+                  modules = [
+                    self.nixosModules.t3-sandbox
+                    {
+                      nixpkgs.hostPlatform = system;
+                      nixpkgs.config.allowUnfreePredicate = pkg: lib.getName pkg == "claude-code";
+                      boot.loader.grub.enable = false;
+                      fileSystems."/" = {
+                        device = "/dev/null";
+                        fsType = "ext4";
+                      };
+                      system.stateVersion = "24.05";
+                    }
+                    extra
+                  ];
+                };
+              server = {
+                t3Connect.mesh.loginServer = "https://mesh.example.net";
+              };
+              basic = evalWith server;
+              custom = evalWith (
+                server
+                // {
+                  sandbox = {
+                    user = "dev";
+                    tools = [
+                      "claude"
+                      "opencode"
+                    ];
+                  };
+                }
+              );
+              noServer = evalWith { };
+              ok =
+                basic.config.t3Connect.enable
+                && basic.config.t3Connect.mesh.enable
+                && basic.config.t3Connect.user == "user"
+                && basic.config.t3Connect.harnesses == [ "claude" ]
+                && basic.config.systemd.services ? t3-serve
+                && custom.config.t3Connect.user == "dev"
+                &&
+                  custom.config.t3Connect.harnesses == [
+                    "claude"
+                    "opencode"
+                  ]
+                && custom.config.users.users.dev.isNormalUser
+                && !(builtins.tryEval noServer.config.system.build.toplevel.drvPath).success;
+            in
+            assert lib.assertMsg ok "t3-sandbox-eval failed";
+            pkgs.writeText "t3-sandbox-eval" (
+              builtins.unsafeDiscardStringContext (
+                basic.config.system.build.toplevel.drvPath + custom.config.system.build.toplevel.drvPath
+              )
+            );
+
+          # The generated seed script, run for real with jq: a missing file is created with the seed, a
+          # user's edits (an instance switched off, the linked beta switched off, a key of their own)
+          # survive a second run, and a provider name with a hyphen cannot change the jq program.
+          t3-connect-seed =
+            let
+              sys = nixpkgs.lib.nixosSystem {
+                modules = [
+                  self.nixosModules.t3-connect
+                  {
+                    nixpkgs.hostPlatform = system;
+                    nixpkgs.overlays = [ self.overlays.default ];
+                    boot.loader.grub.enable = false;
+                    fileSystems."/" = {
+                      device = "/dev/null";
+                      fsType = "ext4";
+                    };
+                    system.stateVersion = "24.05";
+                    users.users.user.isNormalUser = true;
+                    t3Connect = {
+                      enable = true;
+                      baseDir = "/tmp/t3seed";
+                      harnesses = [
+                        "claude"
+                        "opencode"
+                      ];
+                      providers = {
+                        codex = false;
+                        "my-driver" = true;
+                      };
+                    };
+                  }
+                ];
+              };
+              script = pkgs.writeShellScript "seed" sys.config.t3Connect.generated.seed;
+            in
+            pkgs.runCommand "t3-connect-seed"
+              {
+                nativeBuildInputs = [
+                  pkgs.jq
+                  pkgs.bash
+                  pkgs.coreutils
+                ];
+              }
+              ''
+                set -e
+                f=/tmp/t3seed/userdata/settings.json
+                bash ${script}
+                jq -e '.linkedEnvironmentsEnabled == true
+                  and .providerInstances.opencode.enabled == true
+                  and .providerInstances.codex.enabled == false
+                  and .providerInstances["my-driver"].enabled == true' "$f"
+                jq '.providerInstances.opencode.enabled = false | .linkedEnvironmentsEnabled = false | .mine = "kept"' "$f" > "$f.edit"
+                mv "$f.edit" "$f"
+                bash ${script}
+                jq -e '.providerInstances.opencode.enabled == false
+                  and .linkedEnvironmentsEnabled == false
+                  and .mine == "kept"' "$f"
+                touch "$out"
+              '';
+
+          # homeModules.t3-connect-delegator: evaluated with a stub for home-manager's option, since this
+          # flake has no home-manager input. Enabled installs t3-link-vm; disabled installs nothing.
+          t3-connect-delegator-eval =
+            let
+              pkgsOv = import nixpkgs {
+                inherit system;
+                overlays = [ self.overlays.default ];
+              };
+              evalWith =
+                enable:
+                lib.evalModules {
+                  modules = [
+                    (import ./modules/t3-connect/delegator.nix { inherit self; })
+                    {
+                      options.home.packages = lib.mkOption {
+                        type = lib.types.listOf lib.types.package;
+                        default = [ ];
+                      };
+                      config._module.args.pkgs = pkgsOv;
+                      config.t3Connect.delegator.enable = enable;
+                    }
+                  ];
+                };
+              on = evalWith true;
+              off = evalWith false;
+              ok =
+                lib.length on.config.home.packages == 1
+                && lib.getName (lib.head on.config.home.packages) == "t3-link-vm"
+                && off.config.home.packages == [ ];
+            in
+            assert lib.assertMsg ok "t3-connect-delegator-eval failed";
+            pkgs.writeText "t3-connect-delegator-eval" "ok";
+
           # t3-link-vm against a fake ssh and a fake t3 (tests/t3-link-vm.sh): version skew is refused
           # before a code is minted, the code is never printed, and the default link is full access.
           t3-link-vm =
+            let
+              stubT3 = pkgs.writeShellScriptBin "t3" "";
+              linkVm = import ./modules/t3-connect/link-vm.nix {
+                inherit pkgs;
+                t3 = stubT3;
+              };
+            in
             pkgs.runCommand "t3-link-vm-test"
               {
                 nativeBuildInputs = [
-                  self.packages.${system}.t3-link-vm
+                  linkVm
                   pkgs.bash
                   pkgs.jq
                   pkgs.gnused
@@ -390,7 +587,7 @@
                 ];
               }
               ''
-                bash ${./tests/t3-link-vm.sh} ${self.packages.${system}.t3-link-vm}/bin/t3-link-vm
+                bash ${./tests/t3-link-vm.sh} ${linkVm}/bin/t3-link-vm
                 touch "$out"
               '';
 
