@@ -10,10 +10,10 @@ built the way it is.
 
 | Path | Purpose |
 |------|---------|
-| `flake.nix` | uv2nix wiring: loads the workspace, builds the python package set, exposes `packages.{aarch64-linux,x86_64-linux}.{default,agentic-tools}` |
+| `flake.nix` | uv2nix wiring: loads the workspace, builds the python package set, exposes `packages.{aarch64-linux,x86_64-linux}.{default,agentic-tools,t3-link-vm}` and `packages.x86_64-linux.t3-connect-host-test` |
 | `modules/agentic.nix` | The environment module, exported as `nixosModules.agentic` and `darwinModules.agentic` (platform fixed per export) |
 | `modules/sandbox.nix` | `nixosModules.sandbox`: a basic `user@sandbox` (an ordinary account with a minimal home, the chosen harnesses, a DynamicUser proxy; no home-manager) |
-| `modules/t3-connect/` | The t3-connect layer (`docs/decisions/t3-connect-layer.md`): `guest.nix` (`nixosModules.t3-connect`), `host.nix` (`nixosModules.t3-connect-host`, the one module that knows about a bridge and a firewall), `delegator.nix` (`homeModules.t3-connect-delegator`), `link-vm.nix` (`t3-link-vm`) |
+| `modules/t3-connect/` | The t3-connect layer (`docs/decisions/t3-connect-layer.md`): `guest.nix` (`nixosModules.t3-connect`), `host.nix` (`nixosModules.t3-connect-host`, the one module that knows about a bridge and a firewall), `delegator.nix` (`homeModules.t3-connect-delegator`), `sandbox.nix` (`nixosModules.t3-sandbox`, the one-import guest: `sandbox` plus `t3-connect`), `link-vm.nix` (`t3-link-vm`) |
 | `modules/shared.nix` | Proxy flags and MCP wrapper shared by `agentic.nix` and `sandbox.nix` |
 | `tests/sandbox-boot.sh` | Live boot test, `nix run .#test-sandbox` (needs sandy; never run in CI) |
 | `modules/home/` | home-manager modules: `home.agentPlugins`, `home.skillLink`, `home.swePlugin` |

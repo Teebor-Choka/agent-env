@@ -21,16 +21,16 @@ their settings, MCP wiring, compression routing, plugin and skill delivery), wit
 how the sandbox is built. See [`decisions/environment-modules.md`](decisions/environment-modules.md).
 
 No deep spec: the package side is a thin packaging wrapper (pin one version, let uv2nix build the resolved
-wheel set) with no runtime pipeline, protocol, or stateful subsystem of its own to specify — the
-ADRs below cover the decisions that matter.
+wheel set) with no runtime pipeline, protocol, or stateful subsystem of its own to specify. The t3-connect layer is
+specified in its own decision record. The ADRs below cover the decisions that matter.
 
 ## Layout
 
 | Path | Purpose |
 |------|---------|
-| `flake.nix` | Loads the uv workspace, builds the python package set via uv2nix + pyproject-build-systems, exposes `packages.{aarch64-linux,x86_64-linux}.{default,agentic-tools}` |
+| `flake.nix` | Loads the uv workspace, builds the python package set via uv2nix + pyproject-build-systems, exposes `packages.{aarch64-linux,x86_64-linux}.{default,agentic-tools,t3-link-vm}` and `packages.x86_64-linux.t3-connect-host-test` |
 | `modules/agentic.nix` | `nixosModules.agentic` and `darwinModules.agentic`: harness packages and settings, sessions, extensions, headroom service and shell routing |
-| `modules/t3-connect/` | the t3-connect layer: `guest.nix` (`nixosModules.t3-connect`), `host.nix` (`nixosModules.t3-connect-host`), `delegator.nix` (`homeModules.t3-connect-delegator`) and `link-vm.nix` (`t3-link-vm`) |
+| `modules/t3-connect/` | the t3-connect layer: `guest.nix` (`nixosModules.t3-connect`), `host.nix` (`nixosModules.t3-connect-host`), `sandbox.nix` (`nixosModules.t3-sandbox`, the one-import guest), `delegator.nix` (`homeModules.t3-connect-delegator`) and `link-vm.nix` (`t3-link-vm`) |
 | `modules/home/` | home-manager modules for plugin and skill delivery (`home.agentPlugins`, `home.skillLink`, `home.swePlugin`) |
 | `tests/` | the plugin-normalizer suite and fixtures, the `t3-link-vm` suite, and the host network VM test |
 | `pyproject.toml` | The only "dependency" this project has: the pinned headroom-ai version |

@@ -84,6 +84,32 @@ t3Connect.delegator = { enable = true; package = <the t3 CLI matching the app>; 
 #   t3-link-vm <ssh-target> "http://[<node ipv6>]:3773"       # full access by default
 ```
 
+What to set on each machine (mesh server, host, guest, delegator) and how to check it:
+[`docs/t3-connect-setup.md`](docs/t3-connect-setup.md).
+
+#### One module for the whole guest
+
+`nixosModules.t3-sandbox` is the sandbox account, the harnesses and the t3 layer in one import. It sets
+`t3Connect.enable`, takes the t3 user and harnesses from `sandbox.user` and `sandbox.tools`, and turns the mesh
+on. The only setting you must add is the mesh login server:
+
+```nix
+imports = [ inputs.agent-env.nixosModules.t3-sandbox ];
+t3Connect.mesh.loginServer = "https://mesh.example.net";
+# optional: sandbox.user = "dev"; sandbox.tools = [ "claude" "opencode" ];
+#           t3Connect.credentials.CLAUDE_CODE_OAUTH_TOKEN = "claude-oauth-token";
+```
+
+Import it instead of `sandbox` and `t3-connect`, not as well: both declare the same options. A builder that
+takes one module name and passes no options (for example `sandy run --attr`) cannot set the login server, so
+wrap `t3-sandbox` in a module of your own that sets it, and pass that.
+
+| Machine | Module |
+|---|---|
+| the guest (the server your phone or app connects to) | `nixosModules.t3-sandbox`, or `sandbox` plus `t3-connect` for finer control |
+| the host that runs the guests (optional) | `nixosModules.t3-connect-host` |
+| the machine that runs the T3 app | `homeModules.t3-connect-delegator` |
+
 The host fills the secrets directory before boot and writes the marker `.ready` last; how it is shared
 (virtiofs, a disk) is the builder's business. The overlay adds `pkgs.t3-server` (headless `t3 serve`). A guest
 that is linked needs the mesh IPv6 address: a peer link refuses plain http except for loopback and the tailnet

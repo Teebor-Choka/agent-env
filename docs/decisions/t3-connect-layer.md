@@ -13,14 +13,15 @@ tailnet IPv6 address. Its parts are generic, and several are traps that cost hou
 never fires on virtiofs, `tailscale up` refusing without `--reset`, a refused client-sent tag, a
 beta flag that must be on at both ends, and provider instances that must exist in the settings.
 
-**Decision.** Add a layer named `t3-connect`, off by default, with three exports and a package:
+**Decision.** Add a layer named `t3-connect`, off by default, with five exports:
 
 | Export | What it does |
 |---|---|
-| `overlays.default` gains `t3-server` | headless `t3 serve` with the harness CLIs on its PATH; the desktop binary is removed on Linux only |
+| `overlays.default` gains `t3-server` | headless `t3 serve`; its wrapper provides claude, codex, git and gh, and the desktop binary is removed on Linux only |
 | `nixosModules.t3-connect` | guest side: the `t3-serve` unit, credentials, ready poller, mesh join, settings seed (linked environments, provider instances), firewall on the mesh interface |
+| `nixosModules.t3-sandbox` | the whole guest in one import: `sandbox` plus `t3-connect`, with the t3 user and harnesses taken from the sandbox settings and the mesh on; only `t3Connect.mesh.loginServer` is required |
 | `nixosModules.t3-connect-host` | host side, optional: a bridge, NAT and a firewall that give a guest public egress only |
-| `homeModules.t3-connect-delegator` | the delegator's side: a pinned `t3` CLI and `t3-link` and `t3-pair` helpers |
+| `homeModules.t3-connect-delegator` | the delegator's side: `t3-link-vm`, which mints a code over ssh and links a guest. `t3-pair`, which prints the code, is installed in the guest |
 
 `t3Connect.enable = false` adds nothing to the system. Each sub-layer has its own switch
 (`mesh.enable`, `linkedEnvironments`, `providers`). Every non-obvious setting carries a comment that
