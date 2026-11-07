@@ -65,7 +65,6 @@ t3="${T3_BIN:-$t3_default}"
 export T3_BIN="$t3"
 state="${XDG_STATE_HOME:-$HOME/.local/state}/t3-sandy"
 mkdir -p "$state"
-sandy_bin="$sandy_dir/target/release/sandy"
 
 log() { echo "t3-sandy: $*" >&2; }
 # Remote commands run on the sandy host; $sandy_dir and ~ expand there.
@@ -102,27 +101,26 @@ workdir=".cache/t3-sandy/$nonce"
 job=""
 envid=""
 tunnel_pid=""
-wait_pid=""
 unlink_failed=0
+leaked=0
+started=0
+
+# The guest runs as a root-owned unit, so `sandy kill` as this user only writes a "cancelled" record and
+# leaves the unit running. The unit's own state decides, never the job record.
+unit_state() { rs "systemctl is-active $unit || true" 2>/dev/null || echo unknown; }
+stopped_state() { case "$1" in inactive | failed) return 0 ;; *) return 1 ;; esac; }
 
 stop_job() {
-  [ -n "$job" ] || return 0
-  local ended
-  ended=$(rs "jq -r 'if .result then \"yes\" else \"no\" end' ~/.sandy/jobs/$job.json" 2>/dev/null) || ended=unknown
-  [ "$ended" = yes ] && return 0
-  log "stopping job $job"
-  rs "$sandy_bin kill $job" >/dev/null 2>&1 || true
-  ended=$(rs "jq -r 'if .result then \"yes\" else \"no\" end' ~/.sandy/jobs/$job.json" 2>/dev/null) || ended=unknown
-  if [ "$ended" != yes ]; then
-    log "sandy kill did not end the job; stopping the unit (sudo prompt)"
-    ssh -t -- "$host" "sudo systemctl stop $unit" || log "could not stop $unit: run 'sudo systemctl stop $unit' on $host"
-  fi
+  [ "$started" = 1 ] || return 0
+  stopped_state "$(unit_state)" && return 0
+  log "stopping $unit (sudo prompt)"
+  ssh -t -- "$host" "sudo systemctl stop $unit" || log "could not stop $unit: run 'sudo systemctl stop $unit' on $host"
+  stopped_state "$(unit_state)" || { log "$unit may still run on $host"; leaked=1; }
 }
 
 cleanup() {
   local rc=$?
   trap - EXIT INT TERM HUP
-  [ -z "$wait_pid" ] || kill "$wait_pid" 2>/dev/null || true
   stop_job
   if [ -n "$envid" ]; then
     if t3-unlink-vm --base-dir "$base" --force -- "$envid"; then
@@ -134,15 +132,17 @@ cleanup() {
   fi
   [ -z "$tunnel_pid" ] || kill "$tunnel_pid" 2>/dev/null || true
   rs "rm -rf $workdir" >/dev/null 2>&1 || true
-  { [ "$unlink_failed" = 0 ] && [ "$reap_failed" = 0 ]; } || rc=1
+  { [ "$unlink_failed" = 0 ] && [ "$reap_failed" = 0 ] && [ "$leaked" = 0 ]; } || rc=1
   exit "$rc"
 }
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM HUP
 
+# The job is over when its record has a result or its unit is no longer running.
 job_ended() {
-  [ "$(rs "jq -r 'if .result then \"yes\" else \"no\" end' ~/.sandy/jobs/$job.json" 2>/dev/null)" = yes ]
+  [ "$(rs "jq -r 'if .result then \"yes\" else \"no\" end' ~/.sandy/jobs/$job.json" 2>/dev/null)" = yes ] && return 0
+  stopped_state "$(unit_state)"
 }
 
 # The trailing `true` keeps an empty job directory from failing the listing; a dead connection still does.
@@ -170,6 +170,7 @@ for f in guest.sh start.sh; do
   rs "mkdir -p $workdir && cat > $workdir/$f" < "$start_script/$f" || { log "could not upload $f"; exit 1; }
 done
 log "starting $unit on $host (sudo password prompt)"
+started=1
 ssh -t -- "$host" "UNIT=$unit NONCE=$nonce JOB_TIMEOUT=$job_timeout SANDY_DIR=$sandy_dir bash $workdir/start.sh" \
   || { log "the start step failed"; exit 1; }
 
@@ -226,12 +227,10 @@ envid=$("$t3" environment list --json --base-dir "$base" | jq -r --arg u "$url" 
 printf '%s\n' "$job" > "$state/$envid"
 log "linked $envid at $url; holding until job $job ends (Ctrl-C stops it and unlinks)"
 
-# A dropped ssh ends `sandy wait` early: ask again until the record has a result.
+# Poll instead of `sandy wait`: that blocks for good when the unit dies without writing a result.
+# The sleep runs in the background so a signal ends it at once.
 until job_ended; do
-  rs "$sandy_bin wait $job -o json" > /dev/null 2>&1 &
-  wait_pid=$!
-  wait "$wait_pid" || true
-  wait_pid=""
-  job_ended || sleep 5
+  sleep "${T3_SANDY_POLL:-10}" &
+  wait $!
 done
 log "job $job ended"

@@ -24,7 +24,8 @@ new_env() {
 echo "t3 \$*" >> "$LOG"
 case "\$1 \$2" in
   "--version "*) echo "t3 v\${FAKE_CLI_VERSION:-0.1.7}" ;;
-  "environment link") echo "Linked sandy (env-1) using \$5"
+  "environment link") [ -n "\${FAKE_LINK_FAIL:-}" ] && { touch "$TMP/ended.newjob"; echo "link refused" >&2; exit 1; }
+    echo "Linked sandy (env-1) using \$5"
     printf '[{"environmentId":"env-1","label":"sandy","urls":["%s"],"status":"reachable"}]\n' "\$3" > "$TMP/envs" ;;
   "environment list") cat "$TMP/envs" ;;
   "environment unlink") [ -n "\${FAKE_UNLINK_FAIL:-}" ] && { echo "unlink broke" >&2; exit 4; }
@@ -53,18 +54,21 @@ case "\$cmd" in
   *"mkdir -p"*) cat > /dev/null; exit 0 ;;
   *start.sh*) touch "$TMP/started"; exit \${FAKE_START_RC:-0} ;;
   *"ip -4 neigh"*) [ -n "\${FAKE_NO_CODE:-}" ] && exit 0; echo "192.168.84.5 $CODE"; exit 0 ;;
+  *"systemctl is-active"*) # the unit runs from the start until stopped; the record alone does not end it
+    if [ ! -f "$TMP/started" ] || [ -f "$TMP/unit.stopped" ]; then echo inactive
+    elif [ -f "$TMP/ended.newjob" ] && [ -z "\${FAKE_UNIT_STAYS:-}" ]; then echo inactive
+    else echo active; fi; exit 0 ;;
   *"jq -r"*"/jobs/"*) [ -f "$TMP/ended.\$job" ] && echo yes || echo no; exit 0 ;;
-  *"sandy wait"*) while [ ! -f "$TMP/ended.newjob" ]; do "$BB" sleep 0.2; done; exit 0 ;;
-  *"sandy kill"*) [ -n "\${FAKE_KILL_FAILS:-}" ] || touch "$TMP/ended.newjob"; exit 0 ;;
-  *"systemctl stop"*) touch "$TMP/ended.newjob"; exit 0 ;;
+  *"sandy kill"*) touch "$TMP/ended.newjob"; exit 0 ;; # as the unprivileged user: a record, not a stop
+  *"systemctl stop"*) touch "$TMP/unit.stopped" "$TMP/ended.newjob"; exit 0 ;;
   *"rm -rf"*) exit 0 ;;
 esac
 exit 0
 EOF
   chmod +x "$TMP/bin/t3" "$TMP/bin/ssh"
   echo '{"serverVersion":"0.1.7"}' > "$TMP/base/userdata/server-runtime.json"
-  export PATH="$TMP/bin:$PATH" T3_BIN="$TMP/bin/t3" XDG_STATE_HOME="$TMP/state" LOG TMP
-  unset FAKE_CLI_VERSION FAKE_UNLINK_FAIL FAKE_START_RC FAKE_NO_CODE FAKE_KILL_FAILS FAKE_TRUST
+  export T3_SANDY_POLL=1 PATH="$TMP/bin:$PATH" T3_BIN="$TMP/bin/t3" XDG_STATE_HOME="$TMP/state" LOG TMP
+  unset FAKE_CLI_VERSION FAKE_UNLINK_FAIL FAKE_START_RC FAKE_NO_CODE FAKE_UNIT_STAYS FAKE_LINK_FAIL FAKE_TRUST
 }
 
 run() { "$SUT" --base-dir "$TMP/base" --start-script "$TMP/scripts" --ready-timeout 20 "$@" >"$TMP/out" 2>"$TMP/err"; echo $?; }
@@ -93,19 +97,23 @@ for _ in $(seq 100); do grep -q "environment link" "$LOG" && break; "$BB" sleep 
 kill -TERM "$pid"
 wait "$pid"; rc=$?
 [ "$rc" = 143 ] && ok "a signalled wrapper exits 143" || bad "a signalled wrapper exits 143 (rc=$rc)"
-grep -q "sandy kill" "$LOG" && ok "a signal kills the sandy job" || bad "a signal kills the sandy job"
+grep -q "ssh -t -- ws01 sudo systemctl stop sandbox-" "$LOG" && ok "a signal stops the unit with sudo" || bad "a signal stops the unit with sudo"
+grep -q "sandy kill" "$LOG" && bad "sandy kill is not used" || ok "sandy kill is not used"
 grep -q "environment unlink env-1" "$LOG" && ok "a signal unlinks" || bad "a signal unlinks"
 
-# 3. sandy kill does not end the job: the unit is stopped with a terminal
+# 3. the link fails after the record got a result, but the unit still runs: it is stopped anyway, exit 1
 new_env
-export FAKE_KILL_FAILS=1
-"$SUT" --base-dir "$TMP/base" --start-script "$TMP/scripts" --ready-timeout 20 >"$TMP/out" 2>"$TMP/err" &
-pid=$!
-for _ in $(seq 100); do grep -q "environment link" "$LOG" && break; "$BB" sleep 0.2; done
-"$BB" sleep 1
-kill -TERM "$pid"
-wait "$pid"
-grep -q "ssh -t -- ws01 sudo systemctl stop sandbox-" "$LOG" && ok "falls back to stopping the unit" || bad "falls back to stopping the unit"
+export FAKE_LINK_FAIL=1 FAKE_UNIT_STAYS=1
+rc=$(run)
+[ "$rc" = 1 ] && ok "a failed link exits 1" || bad "a failed link exits 1 (rc=$rc)"
+grep -q "ssh -t -- ws01 sudo systemctl stop sandbox-" "$LOG" && ok "a running unit is stopped whatever the record says" || bad "a running unit is stopped whatever the record says"
+[ -f "$TMP/unit.stopped" ] && ok "the unit is stopped" || bad "the unit is stopped"
+
+# 3b. a job that ended on its own needs no stop and no sudo prompt
+new_env
+end_job_after 2
+rc=$(run)
+grep -q "systemctl stop" "$LOG" && bad "no stop for a unit that has ended" || ok "no stop for a unit that has ended"
 
 # 4. an unlink that fails: non-zero exit, state kept for the next run
 new_env
@@ -165,7 +173,7 @@ export FAKE_NO_CODE=1
 rc=$("$SUT" --base-dir "$TMP/base" --start-script "$TMP/scripts" --ready-timeout 4 >"$TMP/out" 2>"$TMP/err"; echo $?)
 [ "$rc" != 0 ] && ok "gives up when the guest never publishes a code" || bad "gives up when the guest never publishes a code"
 grep -q "environment link" "$LOG" && bad "nothing is linked without a code" || ok "nothing is linked without a code"
-grep -q "sandy kill" "$LOG" && ok "the job is stopped when the start-up gives up" || bad "the job is stopped when the start-up gives up"
+grep -q "ssh -t -- ws01 sudo systemctl stop sandbox-" "$LOG" && ok "the unit is stopped when the start-up gives up" || bad "the unit is stopped when the start-up gives up"
 
 # 10. the trust-root preflight runs before the sandy host is changed
 new_env

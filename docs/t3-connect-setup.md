@@ -186,8 +186,8 @@ t3-sandy --start-script DIR [--host ws01] [--sandy-dir '$HOME/sandy-b7'] [--base
 | 4 | The guest starts `t3 serve`, mints a one-time code and publishes it. The wrapper fetches it from the guest's neighbour address on `sbr0`. |
 | 5 | It opens `ssh -N -L 127.0.0.1:<port>:<guest>:3773` and waits until the guest answers on `http://localhost:<port>`. |
 | 6 | It runs `t3 environment link http://localhost:<port> --pairing-code <code> --access <mode>` and records the environment id and job id in `~/.local/state/t3-sandy/`. |
-| 7 | It runs `sandy wait` until the job record has a result. A dropped ssh connection starts the wait again. |
-| 8 | On the end of the job, on Ctrl-C, or on SIGTERM or SIGHUP, it stops the job with `sandy kill`. If the job still runs, it runs `sudo systemctl stop <unit>` over `ssh -t`. It then runs `t3-unlink-vm` for the environment and removes the tunnel. |
+| 7 | It polls every 10 s until the job record has a result or the unit is no longer active. |
+| 8 | On the end of the job, on Ctrl-C, or on SIGTERM or SIGHUP, it checks `systemctl is-active <unit>`. If the unit still runs, whatever the job record says, it runs `sudo systemctl stop <unit>` over `ssh -t`; `sandy kill` is not used, because as this user it only writes a "cancelled" record and the root-run unit keeps going. It then runs `t3-unlink-vm` for the environment and removes the tunnel. |
 
 The exit status is 1 when an unlink fails, whatever else happened. A signal gives 130 or 143 when the unlink worked.
 
@@ -230,6 +230,5 @@ no state file and is never touched. A state file with no matching entry is remov
 ### Not verified live
 
 Verified: the wrapper against a fake sandy host and CLI (`checks.x86_64-linux.t3-sandy`). The sandy-side scripts
-have their own checks. Not verified until the first live start: that `sandy kill` works without
-root, that the guest's `t3` has `auth pairing create` (the script falls back to `t3 pair`), that the sandy
+have their own checks. Not verified until the first live start: that the guest's `t3` has `auth pairing create` (the script falls back to `t3 pair`), that the sandy
 host reaches port 3774 of the guest, and that `--env` reaches the guest script.
