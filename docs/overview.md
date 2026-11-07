@@ -28,7 +28,7 @@ specified in its own decision record. The ADRs below cover the decisions that ma
 
 | Path | Purpose |
 |------|---------|
-| `flake.nix` | Loads the uv workspace, builds the python package set via uv2nix + pyproject-build-systems, exposes `packages.{aarch64-linux,x86_64-linux}.{default,agentic-tools,t3-link-vm,t3-unlink-vm,t3-sandy}` and `packages.x86_64-linux.t3-connect-host-test` |
+| `flake.nix` | Loads the uv workspace, builds the python package set via uv2nix + pyproject-build-systems, exposes `packages.{aarch64-linux,x86_64-linux}.{default,agentic-tools,t3-link-vm,t3-unlink-vm,t3-run-vm}` and `packages.x86_64-linux.t3-connect-host-test` |
 | `modules/agentic.nix` | `nixosModules.agentic` and `darwinModules.agentic`: harness packages and settings, sessions, extensions, headroom service and shell routing |
 | `modules/t3-connect/` | the t3-connect layer: `guest.nix` (`nixosModules.t3-connect`), `host.nix` (`nixosModules.t3-connect-host`), `sandbox.nix` (`nixosModules.t3-sandbox`, the one-import guest), `delegator.nix` (`homeModules.t3-connect-delegator`) and `link-vm.nix` (`t3-link-vm`) |
 | `modules/home/` | home-manager modules for plugin and skill delivery (`home.agentPlugins`, `home.skillLink`, `home.swePlugin`) |

@@ -161,7 +161,7 @@
             agentic-tools = agenticToolsBySystem.${system};
             t3-link-vm = import ./modules/t3-connect/link-vm.nix { pkgs = t3Pkgs; };
             t3-unlink-vm = import ./modules/t3-connect/unlink-vm.nix { pkgs = t3Pkgs; };
-            t3-sandy = import ./modules/t3-connect/sandy.nix { pkgs = t3Pkgs; };
+            t3-run-vm = import ./modules/t3-connect/run-vm.nix { pkgs = t3Pkgs; };
           }
           # Runtime proof of the host network module in two VMs. Needs KVM, so it is a package to run by
           # hand on a KVM host (`nix build .#t3-connect-host-test -L`), not a check.
@@ -184,7 +184,7 @@
             {
               t3-link-vm = import ./modules/t3-connect/link-vm.nix { pkgs = t3Pkgs; };
               t3-unlink-vm = import ./modules/t3-connect/unlink-vm.nix { pkgs = t3Pkgs; };
-              t3-sandy = import ./modules/t3-connect/sandy.nix { pkgs = t3Pkgs; };
+              t3-run-vm = import ./modules/t3-connect/run-vm.nix { pkgs = t3Pkgs; };
             };
         };
 
@@ -552,7 +552,7 @@
                 overlays = [ self.overlays.default ];
               };
               evalWith =
-                enable:
+                enable: reaper:
                 lib.evalModules {
                   modules = [
                     (import ./modules/t3-connect/delegator.nix { inherit self; })
@@ -561,19 +561,38 @@
                         type = lib.types.listOf lib.types.package;
                         default = [ ];
                       };
+                      options.home.homeDirectory = lib.mkOption { type = lib.types.str; };
+                      options.assertions = lib.mkOption {
+                        type = lib.types.listOf lib.types.attrs;
+                        default = [ ];
+                      };
+                      options.launchd.agents = lib.mkOption {
+                        type = lib.types.attrsOf lib.types.attrs;
+                        default = { };
+                      };
+                      config.home.homeDirectory = "/home/t";
                       config._module.args.pkgs = pkgsOv;
                       config.t3Connect.delegator.enable = enable;
+                      config.t3Connect.delegator.reaper.enable = reaper;
+                      config.t3Connect.delegator.reaper.host = "vmhost";
                     }
                   ];
                 };
-              on = evalWith true;
-              off = evalWith false;
+              on = evalWith true false;
+              off = evalWith false false;
+              withReaper = evalWith true true;
+              agent = withReaper.config.launchd.agents.t3-run-vm-reap.config;
               ok =
                 map lib.getName on.config.home.packages == [
                   "t3-link-vm"
                   "t3-unlink-vm"
                 ]
-                && off.config.home.packages == [ ];
+                && off.config.home.packages == [ ]
+                # the reaper is off unless asked for, and then runs --reap-only at load and every 300 s
+                && on.config.launchd.agents == { }
+                && agent.RunAtLoad
+                && agent.StartInterval == 300
+                && builtins.elem "--reap-only" agent.ProgramArguments;
             in
             assert lib.assertMsg ok "t3-connect-delegator-eval failed";
             pkgs.writeText "t3-connect-delegator-eval" "ok";
@@ -609,20 +628,20 @@
                 touch "$out"
               '';
 
-          # t3-sandy: the whole link life cycle against a fake sandy host and a fake app CLI
-          # (tests/t3-sandy.sh). The sandy-side scripts it starts are not in this repo.
-          t3-sandy =
+          # t3-run-vm: the whole link life cycle against a fake VM host and a fake app CLI
+          # (tests/t3-run-vm.sh). The host-side start script it runs is not in this repo.
+          t3-run-vm =
             let
               stubT3 = pkgs.writeShellScriptBin "t3" "";
-              sandyWrapper = import ./modules/t3-connect/sandy.nix {
+              runVmWrapper = import ./modules/t3-connect/run-vm.nix {
                 inherit pkgs;
                 t3 = stubT3;
               };
             in
-            pkgs.runCommand "t3-sandy-test"
+            pkgs.runCommand "t3-run-vm-test"
               {
                 nativeBuildInputs = [
-                  sandyWrapper
+                  runVmWrapper
                   pkgs.bash
                   pkgs.busybox
                   pkgs.curl
@@ -632,7 +651,7 @@
                 ];
               }
               ''
-                bash ${./tests/t3-sandy.sh} ${sandyWrapper}/bin/t3-sandy
+                bash ${./tests/t3-run-vm.sh} ${runVmWrapper}/bin/t3-run-vm
                 touch "$out"
               '';
 

@@ -165,70 +165,85 @@ listed as offline until you unlink it.
 
 Nothing removes a link when a guest goes away. Remove it with `t3-unlink-vm`.
 
-## 6. Sandy guests (`t3-sandy`)
+## 6. VMs without a mesh (`t3-run-vm`)
 
-A guest started by `sandy run` has no mesh, no ssh and no `t3-pair`. `t3-sandy` runs the whole life of such a
-guest from the machine with the T3 app: start, link, hold, unlink. It is `packages.<system>.t3-sandy`.
-The sandy-side scripts `start.sh` and `guest.sh` belong to the sandy side and are not in this repo. A start needs
-`--start-script` to name them.
+A VM that has no mesh, no ssh and no `t3-pair` cannot be linked with `t3-link-vm`. `t3-run-vm` runs the whole
+life of such a guest from the machine with the T3 app: start, link, hold, unlink. It is
+`packages.<system>.t3-run-vm`. It assumes only a NixOS-style host: the guest is one systemd unit on a host you
+can ssh to, and the guest serves a one-time pairing code over plain HTTP on the host's network.
 
 ```
-t3-sandy --start-script DIR [--host ws01] [--sandy-dir '$HOME/sandy-b7'] [--base-dir ~/.t3] [--access full-access] \
-         [--job-timeout 604800] [--ready-timeout 300] [--no-preflight] [--force] [--reap-only | --no-reap]
+t3-run-vm --host H (--guest ADDR | --bridge DEV) --start-script DIR [--start-env K=V ...] \
+          [--base-dir ~/.t3] [--access full-access] [--job-timeout 604800] [--ready-timeout 300] \
+          [--code-port 3774] [--guest-port 3773] [--force] [--no-reap]
+t3-run-vm --host H --reap-only
 ```
+
+### What the start script must do
+
+`--start-script` names a directory (or the path of `start.sh` in it). `t3-run-vm` uploads every file in it to
+the host and runs `start.sh` over `ssh -t` as the login user, so a sudo prompt reaches you. The script gets
+`UNIT`, `NONCE` and `JOB_TIMEOUT`, plus each `--start-env`. It must:
+
+1. Start the guest as the systemd unit named `UNIT`. `systemctl stop UNIT` must stop the guest.
+2. Make the guest start `t3 serve` on `--guest-port` and publish a one-time pairing code at
+   `http://<guest>:<code-port>/<NONCE>`. Any other path should answer 404.
+3. Return when the unit has started. It does not wait for the guest to be ready.
+
+Everything specific to one VM system, such as how to build the image or check the host's setup, lives in the
+script. A script for a sandy-run guest, a `microvm.nix` guest or a plain libvirt guest differs only there.
 
 | Step | What happens |
 |---|---|
-| 0 | It unlinks the entries of earlier runs whose job has ended (see "Leftovers"). |
+| 0 | It unlinks the entries of earlier runs whose guest has stopped (see "Leftovers"). |
 | 1 | It checks the CLI version as `t3-link-vm` does. |
-| 2 | It checks `~/.config/sandy/trust-roots` on the sandy host (see "Preflight"). It uploads `guest.sh` and `start.sh` from `--start-script` (a directory, or the path of `start.sh`) and runs `start.sh` over `ssh -t`. `start.sh` asks for the sudo password and starts the guest as the unit `sandbox-<6 hex>`. |
-| 3 | It finds the new record in `~/.sandy/jobs` on the sandy host. |
-| 4 | The guest starts `t3 serve`, mints a one-time code and publishes it. The wrapper fetches it from the guest's neighbour address on `sbr0`. |
-| 5 | It opens `ssh -N -L 127.0.0.1:<port>:<guest>:3773` and waits until the guest answers on `http://localhost:<port>`. |
-| 6 | It runs `t3 environment link http://localhost:<port> --pairing-code <code> --access <mode>` and records the environment id and job id in `~/.local/state/t3-sandy/`. |
-| 7 | It polls every 10 s until the job record has a result or the unit is no longer active. |
-| 8 | On the end of the job, on Ctrl-C, or on SIGTERM or SIGHUP, it checks `systemctl is-active <unit>`. If the unit still runs, whatever the job record says, it runs `sudo systemctl stop <unit>` over `ssh -t`; `sandy kill` is not used, because as this user it only writes a "cancelled" record and the root-run unit keeps going. It then runs `t3-unlink-vm` for the environment and removes the tunnel. |
+| 2 | It uploads the start script's files and runs `start.sh` over `ssh -t`. |
+| 3 | It asks the host for the code at `http://<guest>:<code-port>/<nonce>`. With `--bridge`, the guest is the first of the host's neighbours on that bridge that serves it. |
+| 4 | It opens `ssh -N -L 127.0.0.1:<port>:<guest>:<guest-port>` and waits until the guest answers on `http://localhost:<port>`. |
+| 5 | It runs `t3 environment link http://localhost:<port> --pairing-code <code> --access <mode>` and records the environment id, the unit and the time in `~/.local/state/t3-run-vm/<environment id>`. |
+| 6 | It polls `systemctl is-active <unit>` on the host every 10 s until the unit is not active. It also stops if the tunnel drops. |
+| 7 | On any exit it unlinks the entry first (an entry that is already gone counts as unlinked), kills the tunnel, and stops the unit with `sudo systemctl stop <unit>` over `ssh -t` if it is still active. |
 
-The exit status is 1 when an unlink fails, whatever else happened. A signal gives 130 or 143 when the unlink worked.
+The exit status is 1 when an unlink fails or the unit cannot be stopped, whatever else happened. A signal gives 130
+or 143 when both worked. Every ssh the exit path runs has a 10 s connect timeout and a 30 s limit, so a dead host
+does not hold the unlink up.
 
-### Preflight
+### Every way a guest ends
 
-Sandy runs as root in the unit and refuses a trust-root directory that root does not own. Before the sudo prompt
-the wrapper runs `find` on `~/.config/sandy/trust-roots` on the sandy host. It stops when the directory is
-missing, or when it or a file inside is not owned by root or is open to group or others. Files in a 700
-root-owned directory cannot be listed by the account, so only the directory is checked then. It prints this
-fix and does not run it:
+| End | What unlinks the entry |
+|---|---|
+| The guest stops, a step fails, Ctrl-C, SIGTERM, SIGHUP, logout or shutdown, a dropped tunnel | The exit trap, locally, before it touches the host. |
+| The host is down when the wrapper ends | The same trap. The unlink does not need the host; the exit is 1 because the unit could not be checked. |
+| `kill -9`, power loss, reboot | The reaper, below. A window of a few milliseconds between the link and the state file stays: an entry without a state file is never touched. |
 
+### Leftovers and the reaper
+
+`t3-run-vm --reap-only` runs at the start of every run and can run from a timer. For each state file it unlinks
+the entry when the app lists it as `unreachable` and either the host reports the unit not active, or the host is
+unreachable on two checks at least 2 minutes apart (the first check is stored in the state file as
+`unreachableSince`, so a mesh blip does not drop a live link). A guest that still runs keeps its entry, and the
+reaper never stops one. An entry with no state file, such as a link made with `t3-link-vm`, is never touched. A
+state file with no matching entry is removed.
+
+To run it on a timer on macOS, enable the home-manager option (off by default). It runs at login and every 300 s
+by default and logs to `~/Library/Logs/t3-run-vm-reap.log`:
+
+```nix
+t3Connect.delegator = {
+  enable = true;
+  reaper = { enable = true; host = "myhost"; };   # interval = 300;
+};
 ```
-ssh -t <host> 'sudo chown -R root:root ~/.config/sandy/trust-roots && sudo chmod -R go-rwx ~/.config/sandy/trust-roots'
-```
-
-`--no-preflight` skips the check.
-
-### The pairing code channel
-
-The guest cannot show the code to the host before the job ends, so the sandy-side `guest.sh` publishes it. A static busybox
-(`--input busybox`, built on the sandy host) serves a directory that holds one file, named by a random 128-bit
-nonce that the wrapper passes in `T3_NONCE`, on port 3774. Any other path is a 404. The file is deleted and the
-server stops after 5 minutes. The code is one-time and valid for 5 minutes. A local user of the sandy host who
-learns the nonce, which is visible in the unit's environment, can read the code. Such a user already controls the
-guest's network.
-
-### Leftovers
-
-An environment is a leftover when the app lists it as `unreachable` and its job record has a result. The wrapper
-unlinks it at the start of every run. `--reap-only` does only this. An entry that `t3-sandy` did not create has
-no state file and is never touched. A state file with no matching entry is removed.
 
 ### Prerequisites
 
 1. `ssh -o BatchMode=yes <host> true` works from the Mac.
-2. On the sandy host: the `sandy` binary at `<sandy-dir>/target/release/sandy`, `sandytap0` (run `sandy-net.sh up`),
-   `jq`, `curl`, `nix`, and sudo for the account.
-3. The `t3` CLI has the version of the app, as in section 4.
+2. On the host: `systemctl`, `curl`, `ip` (for `--bridge`) and whatever the start script needs.
+3. The `t3` CLI has the version of the app, as in section 4, and the guest runs `t3` 0.1.6 or newer: the app
+   refuses to link a server that does not report `mcpModeLimitHeader` and `linkFence`.
 
 ### Not verified live
 
-Verified: the wrapper against a fake sandy host and CLI (`checks.x86_64-linux.t3-sandy`). The sandy-side scripts
-have their own checks. Not verified until the first live start: that the guest's `t3` has `auth pairing create` (the script falls back to `t3 pair`), that the sandy
-host reaches port 3774 of the guest, and that `--env` reaches the guest script.
+Verified: the wrapper against a fake host and CLI (`checks.x86_64-linux.t3-run-vm`) and the launchd option's
+evaluation. Not verified until a live run on the renamed wrapper: that the host reaches port 3774 of the guest, and
+that the app shows the entry after a refresh (the app showed it only after a Settings refresh in an earlier run).
