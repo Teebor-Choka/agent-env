@@ -15,7 +15,8 @@ new_env() {
   TMP="$(mktemp -d)"
   LOG="$TMP/log"
   : > "$LOG"
-  mkdir -p "$TMP/bin" "$TMP/base/userdata" "$TMP/state" "$TMP/www"
+  mkdir -p "$TMP/bin" "$TMP/base/userdata" "$TMP/state" "$TMP/www" "$TMP/scripts"
+  : > "$TMP/scripts/start.sh"; : > "$TMP/scripts/guest.sh"
   echo '<html>t3</html>' > "$TMP/www/index.html"
   echo '[]' > "$TMP/envs"
   cat > "$TMP/bin/t3" <<EOF
@@ -47,6 +48,7 @@ if [ -n "\$tunnel" ]; then
 fi
 job=\$(printf '%s' "\$cmd" | sed -n 's|.*/jobs/\([A-Za-z0-9-]*\)\.json.*|\1|p')
 case "\$cmd" in
+  *trust-roots*) echo "\${FAKE_TRUST:-ok}"; exit 0 ;;
   *"ls ~/.sandy/jobs"*) echo old.json; [ -f "$TMP/started" ] && echo newjob.json; exit 0 ;;
   *"mkdir -p"*) cat > /dev/null; exit 0 ;;
   *start.sh*) touch "$TMP/started"; exit \${FAKE_START_RC:-0} ;;
@@ -62,10 +64,10 @@ EOF
   chmod +x "$TMP/bin/t3" "$TMP/bin/ssh"
   echo '{"serverVersion":"0.1.7"}' > "$TMP/base/userdata/server-runtime.json"
   export PATH="$TMP/bin:$PATH" T3_BIN="$TMP/bin/t3" XDG_STATE_HOME="$TMP/state" LOG TMP
-  unset FAKE_CLI_VERSION FAKE_UNLINK_FAIL FAKE_START_RC FAKE_NO_CODE FAKE_KILL_FAILS
+  unset FAKE_CLI_VERSION FAKE_UNLINK_FAIL FAKE_START_RC FAKE_NO_CODE FAKE_KILL_FAILS FAKE_TRUST
 }
 
-run() { "$SUT" --base-dir "$TMP/base" --ready-timeout 20 "$@" >"$TMP/out" 2>"$TMP/err"; echo $?; }
+run() { "$SUT" --base-dir "$TMP/base" --start-script "$TMP/scripts" --ready-timeout 20 "$@" >"$TMP/out" 2>"$TMP/err"; echo $?; }
 calls() { grep -c -- "$1" "$LOG"; }
 # end the job after N seconds, as the sandy host would
 end_job_after() { ( "$BB" sleep "$1"; touch "$TMP/ended.newjob" ) & }
@@ -84,7 +86,7 @@ echo '[]' | cmp -s - "$TMP/envs" && ok "nothing stays linked" || bad "nothing st
 
 # 2. a signal stops the job and unlinks
 new_env
-"$SUT" --base-dir "$TMP/base" --ready-timeout 20 >"$TMP/out" 2>"$TMP/err" &
+"$SUT" --base-dir "$TMP/base" --start-script "$TMP/scripts" --ready-timeout 20 >"$TMP/out" 2>"$TMP/err" &
 pid=$!
 for _ in $(seq 100); do grep -q "environment link" "$LOG" && break; "$BB" sleep 0.2; done
 "$BB" sleep 1
@@ -97,7 +99,7 @@ grep -q "environment unlink env-1" "$LOG" && ok "a signal unlinks" || bad "a sig
 # 3. sandy kill does not end the job: the unit is stopped with a terminal
 new_env
 export FAKE_KILL_FAILS=1
-"$SUT" --base-dir "$TMP/base" --ready-timeout 20 >"$TMP/out" 2>"$TMP/err" &
+"$SUT" --base-dir "$TMP/base" --start-script "$TMP/scripts" --ready-timeout 20 >"$TMP/out" 2>"$TMP/err" &
 pid=$!
 for _ in $(seq 100); do grep -q "environment link" "$LOG" && break; "$BB" sleep 0.2; done
 "$BB" sleep 1
@@ -160,12 +162,47 @@ grep -q "environment link" "$LOG" && bad "nothing is linked after a failed start
 # 9. no code from the guest: gives up, nothing is linked, the job is stopped
 new_env
 export FAKE_NO_CODE=1
-rc=$("$SUT" --base-dir "$TMP/base" --ready-timeout 4 >"$TMP/out" 2>"$TMP/err"; echo $?)
+rc=$("$SUT" --base-dir "$TMP/base" --start-script "$TMP/scripts" --ready-timeout 4 >"$TMP/out" 2>"$TMP/err"; echo $?)
 [ "$rc" != 0 ] && ok "gives up when the guest never publishes a code" || bad "gives up when the guest never publishes a code"
 grep -q "environment link" "$LOG" && bad "nothing is linked without a code" || ok "nothing is linked without a code"
 grep -q "sandy kill" "$LOG" && ok "the job is stopped when the start-up gives up" || bad "the job is stopped when the start-up gives up"
 
-# 10. an unknown option is a usage error
+# 10. the trust-root preflight runs before the sandy host is changed
+new_env
+export FAKE_TRUST="bad /home/u/.config/sandy/trust-roots"
+rc=$(run)
+[ "$rc" = 1 ] && ok "a trust root that is not root's stops the run" || bad "a trust root that is not root's stops the run (rc=$rc)"
+grep -q "ssh -t -- ws01 sudo chown -R root:root" "$LOG" && bad "the fix is printed, not run" || ok "the fix is printed, not run"
+grep -q "sudo chown -R root:root ~/.config/sandy/trust-roots && sudo chmod -R go-rwx" "$TMP/err" && ok "prints the exact fix command" || bad "prints the exact fix command"
+grep -q "start.sh" "$LOG" && bad "nothing is uploaded or started after a failed preflight" || ok "nothing is uploaded or started after a failed preflight"
+new_env
+export FAKE_TRUST=missing
+rc=$(run)
+[ "$rc" = 1 ] && grep -q "no ~/.config/sandy/trust-roots" "$TMP/err" && ok "a missing trust root stops the run" || bad "a missing trust root stops the run (rc=$rc)"
+new_env
+export FAKE_TRUST=missing
+end_job_after 3
+rc=$(run --no-preflight)
+[ "$rc" = 0 ] && ok "--no-preflight skips the check" || bad "--no-preflight skips the check (rc=$rc)"
+
+# 11. --start-script: a directory or start.sh itself; both files are required
+new_env
+end_job_after 3
+rc=$(run --start-script "$TMP/scripts/start.sh")
+[ "$rc" = 0 ] && ok "--start-script accepts the path of start.sh" || bad "--start-script accepts the path of start.sh (rc=$rc)"
+new_env
+rc=$("$SUT" --base-dir "$TMP/base" >/dev/null 2>&1; echo $?)
+[ "$rc" = 2 ] && ok "a start without --start-script is a usage error (exit 2)" || bad "a start without --start-script is a usage error (rc=$rc)"
+new_env
+rm "$TMP/scripts/guest.sh"
+rc=$(run)
+[ "$rc" = 2 ] && ok "a script directory without guest.sh is refused" || bad "a script directory without guest.sh is refused (rc=$rc)"
+grep -q "^ssh " "$LOG" && bad "no ssh when a script file is missing" || ok "no ssh when a script file is missing"
+new_env
+rc=$(run --reap-only)
+[ "$rc" = 0 ] && ok "--reap-only needs no --start-script" || bad "--reap-only needs no --start-script (rc=$rc)"
+
+# 12. an unknown option is a usage error
 new_env
 rc=$("$SUT" --bogus >/dev/null 2>&1; echo $?)
 [ "$rc" = 2 ] && ok "an unknown option is a usage error (exit 2)" || bad "an unknown option is a usage error (rc=$rc)"

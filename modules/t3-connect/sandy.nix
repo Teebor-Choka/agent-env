@@ -1,8 +1,8 @@
 # modules/t3-connect/sandy.nix
 # t3-sandy: the whole life of a sandy-run T3 guest, from the machine that runs the T3 app. It starts
 # the job on the sandy host, finds the guest and its one-time pairing code, tunnels the guest's port,
-# links it in the app, holds until the job ends or the command is signalled, then unlinks. The guest
-# script (sandy/guest.sh) and the host start script (sandy/start.sh) travel with it. See
+# links it in the app, holds until the job ends or the command is signalled, then unlinks. The sandy-side
+# scripts (start.sh, guest.sh) are not part of it: --start-script names them. See
 # docs/t3-connect-setup.md, "Sandy guests".
 {
   pkgs,
@@ -23,7 +23,6 @@ pkgs.writeShellApplication {
   ];
   text = ''
     t3_default=${t3}/bin/t3
-    sandy_files=${./sandy}
   ''
   + builtins.replaceStrings [ "CLI_VERSION_CHECK" ] [ (import ./cli-version.nix "t3-sandy") ] (
     builtins.readFile ./sandy/t3-sandy.sh

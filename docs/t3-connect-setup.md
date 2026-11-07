@@ -169,17 +169,19 @@ Nothing removes a link when a guest goes away. Remove it with `t3-unlink-vm`.
 
 A guest started by `sandy run` has no mesh, no ssh and no `t3-pair`. `t3-sandy` runs the whole life of such a
 guest from the machine with the T3 app: start, link, hold, unlink. It is `packages.<system>.t3-sandy`.
+The sandy-side scripts `start.sh` and `guest.sh` belong to the sandy side and are not in this repo. A start needs
+`--start-script` to name them.
 
 ```
-t3-sandy [--host ws01] [--sandy-dir '$HOME/sandy-b7'] [--base-dir ~/.t3] [--access full-access] \
-         [--job-timeout 604800] [--ready-timeout 300] [--force] [--reap-only | --no-reap]
+t3-sandy --start-script DIR [--host ws01] [--sandy-dir '$HOME/sandy-b7'] [--base-dir ~/.t3] [--access full-access] \
+         [--job-timeout 604800] [--ready-timeout 300] [--no-preflight] [--force] [--reap-only | --no-reap]
 ```
 
 | Step | What happens |
 |---|---|
 | 0 | It unlinks the entries of earlier runs whose job has ended (see "Leftovers"). |
 | 1 | It checks the CLI version as `t3-link-vm` does. |
-| 2 | It uploads `sandy/guest.sh` and `sandy/start.sh` to the sandy host and runs `start.sh` over `ssh -t`. `start.sh` asks for the sudo password and starts the guest as the unit `sandbox-<6 hex>`. |
+| 2 | It checks `~/.config/sandy/trust-roots` on the sandy host (see "Preflight"). It uploads `guest.sh` and `start.sh` from `--start-script` (a directory, or the path of `start.sh`) and runs `start.sh` over `ssh -t`. `start.sh` asks for the sudo password and starts the guest as the unit `sandbox-<6 hex>`. |
 | 3 | It finds the new record in `~/.sandy/jobs` on the sandy host. |
 | 4 | The guest starts `t3 serve`, mints a one-time code and publishes it. The wrapper fetches it from the guest's neighbour address on `sbr0`. |
 | 5 | It opens `ssh -N -L 127.0.0.1:<port>:<guest>:3773` and waits until the guest answers on `http://localhost:<port>`. |
@@ -189,9 +191,23 @@ t3-sandy [--host ws01] [--sandy-dir '$HOME/sandy-b7'] [--base-dir ~/.t3] [--acce
 
 The exit status is 1 when an unlink fails, whatever else happened. A signal gives 130 or 143 when the unlink worked.
 
+### Preflight
+
+Sandy runs as root in the unit and refuses a trust-root directory that root does not own. Before the sudo prompt
+the wrapper runs `find` on `~/.config/sandy/trust-roots` on the sandy host. It stops when the directory is
+missing, or when it or a file inside is not owned by root or is open to group or others. Files in a 700
+root-owned directory cannot be listed by the account, so only the directory is checked then. It prints this
+fix and does not run it:
+
+```
+ssh -t <host> 'sudo chown -R root:root ~/.config/sandy/trust-roots && sudo chmod -R go-rwx ~/.config/sandy/trust-roots'
+```
+
+`--no-preflight` skips the check.
+
 ### The pairing code channel
 
-The guest cannot show the code to the host before the job ends, so `guest.sh` publishes it. A static busybox
+The guest cannot show the code to the host before the job ends, so the sandy-side `guest.sh` publishes it. A static busybox
 (`--input busybox`, built on the sandy host) serves a directory that holds one file, named by a random 128-bit
 nonce that the wrapper passes in `T3_NONCE`, on port 3774. Any other path is a 404. The file is deleted and the
 server stops after 5 minutes. The code is one-time and valid for 5 minutes. A local user of the sandy host who
@@ -213,7 +229,7 @@ no state file and is never touched. A state file with no matching entry is remov
 
 ### Not verified live
 
-Verified: the wrapper against a fake sandy host and CLI, and `guest.sh` against fake t3 tools and a real busybox
-httpd (`checks.x86_64-linux.t3-sandy`). Not verified until the first live start: that `sandy kill` works without
+Verified: the wrapper against a fake sandy host and CLI (`checks.x86_64-linux.t3-sandy`). The sandy-side scripts
+have their own checks. Not verified until the first live start: that `sandy kill` works without
 root, that the guest's `t3` has `auth pairing create` (the script falls back to `t3 pair`), that the sandy
 host reaches port 3774 of the guest, and that `--env` reaches the guest script.

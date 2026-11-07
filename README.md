@@ -83,7 +83,7 @@ imports = [ inputs.agent-env.homeModules.t3-connect-delegator ];
 t3Connect.delegator = { enable = true; package = <the t3 CLI matching the app>; };
 #   t3-link-vm <ssh-target> "http://[<node ipv6>]:3773"       # full access by default
 #   t3-unlink-vm <id|label|url>                               # forget it again
-#   t3-sandy                                                  # sandy guest: start, link, hold, unlink
+#   t3-sandy --start-script DIR                               # sandy guest: start, link, hold, unlink
 ```
 
 What to set on each machine (mesh server, host, guest, delegator) and how to check it:

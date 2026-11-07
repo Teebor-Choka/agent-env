@@ -1,8 +1,9 @@
-# Body of t3-sandy (modules/t3-connect/sandy.nix puts `t3_default` and `sandy_files` before it).
+# Body of t3-sandy (modules/t3-connect/sandy.nix puts `t3_default` before it).
 # One command for the whole life of a sandy-run T3 guest, from the Mac that runs the T3 app:
 #   start the job on the sandy host -> find the guest and its pairing code -> tunnel its port ->
 #   link it in the app -> hold until the job ends or this command is signalled -> stop the job -> unlink.
 # Exits non-zero when the unlink fails. Every run first unlinks entries left by a run that died.
+# The sandy-side scripts (start.sh, guest.sh) are not part of this package: --start-script names them.
 
 usage() {
   cat >&2 <<'USAGE'
@@ -11,8 +12,10 @@ usage: t3-sandy [options]
   --sandy-dir D       sandy checkout on that host (default $HOME/sandy-b7, expanded there)
   --base-dir DIR      the T3 app's data dir on this machine (default ~/.t3)
   --access MODE       link access mode (default full-access)
+  --start-script P    directory with start.sh and guest.sh, or the path of start.sh (required to start a job)
   --job-timeout SEC   sandy job timeout (default 604800)
   --ready-timeout SEC wait for the guest and its code (default 300)
+  --no-preflight      skip the check of the sandy host's trust roots
   --force             go on when the CLI and app versions cannot be compared
   --reap-only         unlink entries of ended jobs and exit
   --no-reap           skip that cleanup at start
@@ -25,7 +28,9 @@ host=ws01
 sandy_dir='$HOME/sandy-b7'
 base="$HOME/.t3"
 access=full-access
+start_script=
 job_timeout=604800
+preflight=1
 ready_timeout=300
 force=0
 reap_only=0
@@ -36,6 +41,8 @@ while [ $# -gt 0 ]; do
     --sandy-dir) sandy_dir="${2:?--sandy-dir needs a value}"; shift 2 ;;
     --base-dir) base="${2:?--base-dir needs a value}"; shift 2 ;;
     --access) access="${2:?--access needs a value}"; shift 2 ;;
+    --start-script) start_script="${2:?--start-script needs a value}"; shift 2 ;;
+    --no-preflight) preflight=0; shift ;;
     --job-timeout) job_timeout="${2:?--job-timeout needs a value}"; shift 2 ;;
     --ready-timeout) ready_timeout="${2:?--ready-timeout needs a value}"; shift 2 ;;
     --force) force=1; shift ;;
@@ -46,6 +53,13 @@ while [ $# -gt 0 ]; do
   esac
 done
 case "$job_timeout$ready_timeout" in *[!0-9]* | "") echo "t3-sandy: timeouts are whole seconds" >&2; exit 2 ;; esac
+if [ "$reap_only" = 0 ]; then
+  [ -n "$start_script" ] || { echo "t3-sandy: --start-script is required" >&2; usage; }
+  [ -d "$start_script" ] || start_script="$(dirname -- "$start_script")"
+  for f in start.sh guest.sh; do
+    [ -f "$start_script/$f" ] || { echo "t3-sandy: $start_script/$f not found" >&2; exit 2; }
+  done
+fi
 
 t3="${T3_BIN:-$t3_default}"
 export T3_BIN="$t3"
@@ -135,9 +149,25 @@ job_ended() {
 job_files() { rs 'ls ~/.sandy/jobs/ 2>/dev/null; true' | { grep '\.json$' || true; } | sort; }
 before=$(job_files) || { log "cannot reach $host"; exit 1; }
 
+# sandy runs as root in the unit and refuses trust roots that are not root's. Only the directory can be
+# checked from here when it is root-owned and 700; files inside it are checked when they are readable.
+# shellcheck disable=SC2016 # runs on the sandy host
+trust_check='d=$HOME/.config/sandy/trust-roots; [ -d "$d" ] || { echo missing; exit 0; }; bad=$(find "$d" \( ! -user root -o -perm /077 \) 2>/dev/null | head -n1); if [ -n "$bad" ]; then echo "bad $bad"; else echo ok; fi'
+if [ "$preflight" = 1 ]; then
+  fix='sudo chown -R root:root ~/.config/sandy/trust-roots && sudo chmod -R go-rwx ~/.config/sandy/trust-roots'
+  checked=$(rs "$trust_check" 2>/dev/null) || { log "cannot reach $host"; exit 1; }
+  case "$checked" in
+    ok) ;;
+    missing) log "no ~/.config/sandy/trust-roots on $host: sandy has no trust root to mint credentials with"; exit 1 ;;
+    *) log "${checked#bad } on $host is not owned by root or is open to others; sandy refuses it"
+       log "fix it with: ssh -t $host '$fix'"
+       exit 1 ;;
+  esac
+fi
+
 # Start the job: upload the guest files and run start.sh with a terminal, so the sudo prompt reaches you.
 for f in guest.sh start.sh; do
-  rs "mkdir -p $workdir && cat > $workdir/$f" < "$sandy_files/$f" || { log "could not upload $f"; exit 1; }
+  rs "mkdir -p $workdir && cat > $workdir/$f" < "$start_script/$f" || { log "could not upload $f"; exit 1; }
 done
 log "starting $unit on $host (sudo password prompt)"
 ssh -t -- "$host" "UNIT=$unit NONCE=$nonce JOB_TIMEOUT=$job_timeout SANDY_DIR=$sandy_dir bash $workdir/start.sh" \

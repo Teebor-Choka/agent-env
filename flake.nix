@@ -609,8 +609,8 @@
                 touch "$out"
               '';
 
-          # t3-sandy: the whole link life cycle against a fake sandy host and a fake app CLI, and the guest
-          # script against fake t3 tools and a real busybox httpd (tests/t3-sandy*.sh).
+          # t3-sandy: the whole link life cycle against a fake sandy host and a fake app CLI
+          # (tests/t3-sandy.sh). The sandy-side scripts it starts are not in this repo.
           t3-sandy =
             let
               stubT3 = pkgs.writeShellScriptBin "t3" "";
@@ -629,18 +629,9 @@
                   pkgs.jq
                   pkgs.gnused
                   pkgs.coreutils
-                  pkgs.shellcheck
                 ];
               }
               ''
-                shellcheck ${./modules/t3-connect/sandy/guest.sh} ${./modules/t3-connect/sandy/start.sh}
-                # systemd-run looks the command up in sudo's secure_path, so a bare `sandy run` fails there.
-                if grep -nE '(^|[[:space:]])sandy run' ${./modules/t3-connect/sandy/start.sh}; then
-                  echo "start.sh calls sandy by name; use the absolute path" >&2
-                  exit 1
-                fi
-                grep -q '"\$SANDY_DIR/target/release/sandy" run' ${./modules/t3-connect/sandy/start.sh}
-                bash ${./tests/t3-sandy-guest.sh} ${./modules/t3-connect/sandy/guest.sh}
                 bash ${./tests/t3-sandy.sh} ${sandyWrapper}/bin/t3-sandy
                 touch "$out"
               '';
