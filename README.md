@@ -56,6 +56,68 @@ feeds `extensions = "baked"`.
 
 `pkgs.agentic-tools` is one environment carrying `headroom` on `PATH`.
 
+### The t3-connect layer
+
+A switchable layer for reaching a sandbox from a T3 Code client (the desktop app, a browser, a phone) over your own
+mesh, with no per-sandbox click. Off by default: `t3Connect.enable = false` adds nothing. The reasoning and the
+specification are in [`docs/decisions/t3-connect-layer.md`](docs/decisions/t3-connect-layer.md).
+
+```nix
+# 1. the sandbox: runs `t3 serve`, joins the mesh, seeds the t3 settings
+imports = [ inputs.agent-env.nixosModules.t3-connect ];
+t3Connect = {
+  enable = true;
+  user = "me";                                              # an existing ordinary account
+  harnesses = [ "claude" "opencode" ];                      # opencode is seeded enabled; t3 leaves it off
+  credentials.CLAUDE_CODE_OAUTH_TOKEN = "claude-oauth-token";   # env var -> file in secretsDir (/run/secrets)
+  providers.codex = false;                                  # seeded only when absent, so app edits persist
+  mesh = { enable = true; loginServer = "https://mesh.example.net"; };
+};
+
+# 2. the host, optional: a bridge, NAT and a firewall that give guests public egress only
+imports = [ inputs.agent-env.nixosModules.t3-connect-host ];
+t3ConnectHost.enable = true;                                # taps named vm-* join the bridge t3br0
+
+# 3. the machine that runs the T3 app (home-manager): links a sandbox to it
+imports = [ inputs.agent-env.homeModules.t3-connect-delegator ];
+t3Connect.delegator = { enable = true; package = <the t3 CLI matching the app>; };
+#   t3-link-vm <ssh-target> "http://[<node ipv6>]:3773"       # full access by default
+#   t3-unlink-vm <id|label|url>                               # forget it again
+#   t3-run-vm --host H --guest ADDR --start-script DIR        # VM without a mesh: start, link, hold, unlink
+```
+
+What to set on each machine (mesh server, host, guest, delegator) and how to check it:
+[`docs/t3-connect-setup.md`](docs/t3-connect-setup.md).
+
+#### One module for the whole guest
+
+`nixosModules.t3-sandbox` is the sandbox account, the harnesses and the t3 layer in one import. It sets
+`t3Connect.enable`, takes the t3 user and harnesses from `sandbox.user` and `sandbox.tools`, and turns the mesh
+on. The only setting you must add is the mesh login server:
+
+```nix
+imports = [ inputs.agent-env.nixosModules.t3-sandbox ];
+t3Connect.mesh.loginServer = "https://mesh.example.net";
+# optional: sandbox.user = "dev"; sandbox.tools = [ "claude" "opencode" ];
+#           t3Connect.credentials.CLAUDE_CODE_OAUTH_TOKEN = "claude-oauth-token";
+```
+
+Import it instead of `sandbox` and `t3-connect`, not as well: both declare the same options. A builder that
+takes one module name and passes no options (for example `sandy run --attr`) cannot set the login server, so
+wrap `t3-sandbox` in a module of your own that sets it, and pass that.
+
+| Machine | Module |
+|---|---|
+| the guest (the server your phone or app connects to) | `nixosModules.t3-sandbox`, or `sandbox` plus `t3-connect` for finer control |
+| the host that runs the guests (optional) | `nixosModules.t3-connect-host` |
+| the machine that runs the T3 app | `homeModules.t3-connect-delegator` |
+
+The host fills the secrets directory before boot and writes the marker `.ready` last; how it is shared
+(virtiofs, a disk) is the builder's business. The overlay adds `pkgs.t3-server` (headless `t3 serve`). A guest
+that is linked needs the mesh IPv6 address: a peer link refuses plain http except for loopback and the tailnet
+range `fd7a:115c:a1e0::/48`. Checks: `nix flake check --all-systems` evaluates the guest and host modules and
+runs the `t3-link-vm` and `t3-unlink-vm` suites; the rules are proven in two VMs with `nix build .#t3-connect-host-test -L` on a KVM host.
+
 ## Updating
 
 - **Nix inputs** (`flake.lock`): `nix flake update`.
