@@ -17,7 +17,11 @@ Each check says what to run and what must happen. Stop at the first failure and 
 | 0.2 | The guest runs t3 0.1.6 or newer. | `ssh <guest> t3 --version` | `t3 v0.1.6` or higher |
 | 0.3 | The CLI on the Mac equals the app's version. | `jq -r .serverVersion ~/.t3/userdata/server-runtime.json` and `T3_BIN=<cli> $T3_BIN --version` | the same version |
 | 0.4 | The VM is on the mesh and its server answers. | `curl -s -o /dev/null -w '%{http_code}' http://[<guest ipv6>]:3773/` | a code below 500 |
-| 0.5 | The guest has its own harness login. | on the guest: `claude auth status` | the VM's account, not the Mac's |
+| 0.5 | Claude has the VM's own login. | on the guest: `claude auth status` | the VM's account, not the Mac's |
+| 0.5a | opencode has its key, when enabled. | on the guest: `opencode auth list` (or `env \| grep -c OPENROUTER_API_KEY` in the `t3-serve` environment) | a provider is listed, or the variable is set |
+| 0.5b | git and `gh` have the VM's token. | on the guest: `gh auth status` | logged in as the VM's account |
+| 0.5c | The enabled harnesses are the intended ones. | on the guest: `jq '.providerInstances' ~/.t3/userdata/settings.json` | Claude on, opencode on if listed in `t3Connect.harnesses`, Codex off unless set |
+| 0.5d | A harness with no secret is not usable, so it cannot borrow another login. | start a Codex thread on the VM, if enabled | "could not authenticate" for that harness, not a Mac login |
 | 0.6 | The VM cannot reach another identity's VM. | from the guest: `curl -m 3 http://<other guest>:3773/` | fails |
 
 ## 1. `t3-linked`
@@ -44,6 +48,8 @@ Connections.
 | 2.1 | On the guest: `t3-pair 5m remote` (or `t3 auth pairing create --ttl 5m --label remote`) | one line with a code |
 | 2.2 | In the app, add an environment: host `http://[<guest ipv6>]:3773`, the code. Approve by hand if the app asks. | "Backend added"; the VM shows in the pane |
 | 2.3 | Open a project on the VM and start a thread with the Claude harness. | the thread runs; `claude auth status` on the guest shows the VM's account |
+| 2.3a | The app's harness list for this environment. | it shows the harnesses from 0.5c and no others; each shows ready or signed out as in 0.5 to 0.5d |
+| 2.3b | Start a thread with each other enabled harness (opencode). | it runs with the VM's key; a clone or push over HTTPS works with the VM's `gh` token |
 | 2.4 | Start a long task in the thread, quit the Mac app, wait for the task to finish, reopen. | the thread shows the finished turn |
 | 2.5 | Quit the app and shut the Mac down (or sleep it) during a turn. | the turn finishes on the VM; the thread has the result after reconnect |
 | 2.6 | Restart the app. | the environment reconnects without a new code |
