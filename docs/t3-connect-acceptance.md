@@ -71,8 +71,10 @@ Findings:
   `t3 auth pairing create --ttl 5m --json` (field `credential`) and pass it to `t3 environment link --pairing-code`.
 - `t3 environment link` has no `--label` flag. The entry takes its name from the environment.
 - The app's CLI matches the app (0.1.7) through `ELECTRON_RUN_AS_NODE=1 <app binary> <app>.asar/apps/server/dist/bin.mjs`.
-- A deploy restarts running guests. A guest root is rebuilt on every boot, so its ssh host keys change and its mesh
-  join fails until `t3-inject <name>` mints a new key (keys last 15 minutes; node identity is not persisted).
+- A deploy can restart running guests. The guest root is rebuilt on every boot, but ssh host keys persist on the home
+  volume (`~/.hostkeys`), so `known_hosts` stays valid across restarts. Mesh identity does not persist unless the guest
+  keeps `/var/lib/tailscale` on a volume: without it, every restart is a new node with a new address, and the
+  app's saved environment URL breaks. Persist it and use a non-ephemeral key (Headscale drops ephemeral nodes offline).
 - The injector names every mesh node `sandbox-<hash>`, whatever the identity. Use the mesh address, not the name.
 - `~/.config/t3-inject/config` is a home-manager symlink. Until the Mac is rebuilt, run
   `T3_INJECT_CONF=<repo copy> t3-inject <name>` for a new identity.
