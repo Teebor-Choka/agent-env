@@ -46,7 +46,7 @@ Connections.
 | # | Step | Pass |
 |---|---|---|
 | 2.1 | On the guest: `t3-pair 5m remote` (or `t3 auth pairing create --ttl 5m --label remote`) | one line with a code |
-| 2.2 | In the app, add an environment: host `http://[<guest ipv6>]:3773`, the code. Approve by hand if the app asks. | "Backend added"; the VM shows in the pane |
+| 2.2 | In the app, add an environment: host `http://[<guest ipv6>]:3773`, the code. Approve by hand if the app asks. Without pasting: `open "t3code://pair?pairingUrl=<url-encoded http://[<guest ipv6>]:3773/pair#token=<code>>"` shows the app's own "Add the backend at ...?" prompt. | "Backend added"; the VM shows in the pane |
 | 2.3 | Open a project on the VM and start a thread with the Claude harness. | the thread runs; `claude auth status` on the guest shows the VM's account |
 | 2.3a | The app's harness list for this environment. | it shows the harnesses from 0.5c and no others; each shows ready or signed out as in 0.5 to 0.5d |
 | 2.3b | Start a thread with each other enabled harness (opencode). | it runs with the VM's key; a clone or push over HTTPS works with the VM's `gh` token |
@@ -58,6 +58,25 @@ Connections.
 
 Link (stage 1) and remote (stage 2) need one pairing code each. Both can exist for one VM at once; check this in
 2.2 by leaving 1.1 linked.
+
+## Results of the live run (2026-11-07, ws01, T3 0.1.7 app, guests on 0.1.6)
+
+Passed: 1.1 (by hand, see below), 1.2, 1.3, 2.2 (deep link, plain `http` mesh address accepted, "Connected, 0.1.6"),
+and the app's session shows in `t3 auth session list` on the guest. Not run yet: 1.4, 1.5, 1.6, 2.3 to 2.8. The `sandbox`
+guest was unlinked and removed after 1.3; the `personal` guest was renamed `linux-h` and re-added as the remote.
+
+Findings:
+
+- `t3-link-vm` needs `t3-pair` on the guest. A hand-built guest has none: mint the code with
+  `t3 auth pairing create --ttl 5m --json` (field `credential`) and pass it to `t3 environment link --pairing-code`.
+- `t3 environment link` has no `--label` flag. The entry takes its name from the environment.
+- The app's CLI matches the app (0.1.7) through `ELECTRON_RUN_AS_NODE=1 <app binary> <app>.asar/apps/server/dist/bin.mjs`.
+- A deploy restarts running guests. A guest root is rebuilt on every boot, so its ssh host keys change and its mesh
+  join fails until `t3-inject <name>` mints a new key (keys last 15 minutes; node identity is not persisted).
+- The injector names every mesh node `sandbox-<hash>`, whatever the identity. Use the mesh address, not the name.
+- `~/.config/t3-inject/config` is a home-manager symlink. Until the Mac is rebuilt, run
+  `T3_INJECT_CONF=<repo copy> t3-inject <name>` for a new identity.
+- Unlinking only forgets the entry on the Mac. Revoke its session on the guest too (`t3 auth session list`, `revoke`).
 
 ## Out of scope here
 
