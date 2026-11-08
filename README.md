@@ -111,7 +111,7 @@ wrap `t3-sandbox` in a module of your own that sets it, and pass that.
 | the guest (the server your phone or app connects to) | `nixosModules.t3-sandbox`, or `sandbox` plus `t3-connect` for finer control |
 | an image whose builder starts `t3 serve` itself, such as sandy (user, t3, ready probe, git credential helper; no service or mesh) | `nixosModules.t3-guest` |
 | the host that runs the guests (optional) | `nixosModules.t3-connect-host` |
-| the machine that runs the T3 app | `homeModules.t3-connect-delegator` |
+| the machine that runs the T3 app | `homeModules.t3-connect-delegator` | (also `t3-mesh-forget`: delete a stopped guest's Headscale node, see the decision record)
 
 The host fills the secrets directory before boot and writes the marker `.ready` last; how it is shared
 (virtiofs, a disk) is the builder's business. The overlay adds `pkgs.t3-server` (headless `t3 serve`). A guest

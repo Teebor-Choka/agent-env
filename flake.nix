@@ -164,6 +164,7 @@
             agentic-tools = agenticToolsBySystem.${system};
             t3-link-vm = import ./modules/t3-connect/link-vm.nix { pkgs = t3Pkgs; };
             t3-unlink-vm = import ./modules/t3-connect/unlink-vm.nix { pkgs = t3Pkgs; };
+            t3-mesh-forget = import ./modules/t3-connect/mesh-forget.nix { pkgs = t3Pkgs; };
             t3-run-vm = import ./modules/t3-connect/run-vm.nix { pkgs = t3Pkgs; };
           }
           # Runtime proof of the host network module in two VMs. Needs KVM, so it is a package to run by
@@ -187,6 +188,7 @@
             {
               t3-link-vm = import ./modules/t3-connect/link-vm.nix { pkgs = t3Pkgs; };
               t3-unlink-vm = import ./modules/t3-connect/unlink-vm.nix { pkgs = t3Pkgs; };
+              t3-mesh-forget = import ./modules/t3-connect/mesh-forget.nix { pkgs = t3Pkgs; };
               t3-run-vm = import ./modules/t3-connect/run-vm.nix { pkgs = t3Pkgs; };
             };
         };
@@ -711,6 +713,7 @@
                 map lib.getName on.config.home.packages == [
                   "t3-link-vm"
                   "t3-unlink-vm"
+                  "t3-mesh-forget"
                 ]
                 && off.config.home.packages == [ ]
                 # the reaper is off unless asked for, and then runs --reap-only at load and every 300 s
@@ -750,6 +753,26 @@
               ''
                 bash ${./tests/t3-link-vm.sh} ${linkVm}/bin/t3-link-vm
                 bash ${./tests/t3-unlink-vm.sh} ${unlinkVm}/bin/t3-unlink-vm
+                touch "$out"
+              '';
+
+          # t3-mesh-forget against a fake admin command (tests/t3-mesh-forget.sh): only a stopped node that
+          # carries the tag and the exact name is deleted, by numeric id, and only with --yes.
+          t3-mesh-forget =
+            let
+              meshForget = import ./modules/t3-connect/mesh-forget.nix { inherit pkgs; };
+            in
+            pkgs.runCommand "t3-mesh-forget-test"
+              {
+                nativeBuildInputs = [
+                  meshForget
+                  pkgs.bash
+                  pkgs.jq
+                  pkgs.coreutils
+                ];
+              }
+              ''
+                bash ${./tests/t3-mesh-forget.sh} ${meshForget}/bin/t3-mesh-forget
                 touch "$out"
               '';
 
