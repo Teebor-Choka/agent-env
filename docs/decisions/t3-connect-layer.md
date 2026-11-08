@@ -59,6 +59,9 @@ Failure definition
 
 Performance and scale
 - One server per guest. The poller checks one file every `ready.pollInterval` (default 5 s).
+- A guest has no persisted node identity unless the builder mounts `/var/lib/tailscale` on a persistent
+  volume. `mesh.hostname` then fixes the node name, so a restart keeps the node and its address. Headscale
+  drops ephemeral nodes while they are offline, so such a guest needs a non-ephemeral key.
 
 Dependency behaviour
 - Needs `services.tailscale` from nixpkgs for the mesh join, `jq` for the seed, and a coordination

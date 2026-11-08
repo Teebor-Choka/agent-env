@@ -60,6 +60,8 @@ t3Connect.credentials.CLAUDE_CODE_OAUTH_TOKEN = "claude-oauth-token";   # variab
 | `t3Connect.harnesses` | `sandbox.tools` | opencode is seeded enabled, codex follows `providers` |
 | `t3Connect.providers` | none | `{ codex = false; }` seeds an instance as off; an edit in the app persists |
 | `t3Connect.secretsDir` | `/run/secrets` | the files below must exist here |
+| `t3Connect.mesh.hostname` | none | a fixed node name; unset, the injector's `hostname` file names it. For a long-lived guest keep `/var/lib/tailscale` on a persistent volume and use a non-ephemeral key, so a restart keeps the node and its address |
+| `t3Connect.ready.restartUnits` | none | extra units restarted with the server when the marker changes, for work that needs a secret (a clone with a token) |
 | `networking.firewall.enable` | must be `true` | otherwise the module fails evaluation |
 
 Files the host puts in the secrets directory, with the marker last:

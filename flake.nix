@@ -343,6 +343,34 @@
                   bind = "not an address";
                 };
               };
+              # A long-lived guest: a fixed node name and an extra unit restarted with the server.
+              fixed = evalWith {
+                t3Connect = {
+                  enable = true;
+                  mesh = {
+                    enable = true;
+                    loginServer = "https://mesh.example.net";
+                    hostname = "node-a";
+                  };
+                  ready.restartUnits = [ "home-manager-user.service" ];
+                };
+              };
+              badHostname = evalWith {
+                t3Connect = {
+                  enable = true;
+                  mesh = {
+                    enable = true;
+                    loginServer = "https://mesh.example.net";
+                    hostname = "Bad Name";
+                  };
+                };
+              };
+              badRestart = evalWith {
+                t3Connect = {
+                  enable = true;
+                  ready.restartUnits = [ "a.service; reboot" ];
+                };
+              };
               svc = sys: sys.config.systemd.services;
               # An absent option or unit reads as the default, so a missing behaviour fails its case
               # instead of aborting the whole evaluation.
@@ -417,6 +445,18 @@
                   has ''if has("linkedEnvironmentsEnabled") then . else'' (genOf on "seed");
                 "the port follows the tailscale interface name" =
                   get tsIface [ "networking" "firewall" "interfaces" "ts0" "allowedTCPPorts" ] [ ] == [ 3773 ];
+                "a fixed mesh hostname is applied and the injected file is not read" =
+                  has "tailscale set --hostname=node-a" (genOf fixed "hostname")
+                  && !(has "/run/secrets/hostname" (genOf fixed "hostname"));
+                "without mesh.hostname the node is named from the injected file" = has "/run/secrets/hostname" (
+                  genOf on "hostname"
+                );
+                "extra restart units join the poller's single call" =
+                  has "systemctl restart --no-block t3-serve.service tailscaled-autoconnect.service t3-hostname.service home-manager-user.service" (
+                    genOf fixed "ready"
+                  );
+                "a mesh hostname that is not a DNS label is refused" = evalFails badHostname;
+                "a restart unit that is not a unit name is refused" = evalFails badRestart;
                 "a firewall that is off is refused" = evalFails noFirewall;
                 "a credential name that is not an identifier is refused" = evalFails badCred;
                 "a bind that is not an address fails evaluation" = evalFails badBind;

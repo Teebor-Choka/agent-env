@@ -69,7 +69,9 @@ let
     "tailscaled-autoconnect.service"
     "t3-hostname.service"
   ];
-  restartUnits = lib.concatStringsSep " " ([ "t3-serve.service" ] ++ meshUnits);
+  restartUnits = lib.concatStringsSep " " (
+    [ "t3-serve.service" ] ++ meshUnits ++ cfg.ready.restartUnits
+  );
   readyScript = ''
     [ -e ${lib.escapeShellArg marker} ] || exit 0
     stamp=$(stat -c %Y.%i ${lib.escapeShellArg marker})
@@ -80,12 +82,20 @@ let
     systemctl restart --no-block ${restartUnits}
   '';
 
-  # No persisted node identity: every boot is a new node. The injector picks a unique name and writes
-  # it to `secretsDir`, so the orchestrator knows the name before the guest joins.
-  hostnameScript = ''
-    [ -s ${lib.escapeShellArg hostnameFile} ] || exit 0
-    tailscale set --hostname="$(cat ${lib.escapeShellArg hostnameFile})"
-  '';
+  # By default the node has no persisted identity: every boot is a new node, and the injector picks a
+  # unique name and writes it to `secretsDir`, so the orchestrator knows the name before the guest
+  # joins. A long-lived guest instead keeps /var/lib/tailscale on a persistent volume (the builder's
+  # job: this module names no hypervisor) and sets `mesh.hostname`, so a restart keeps node and name.
+  hostnameScript =
+    if cfg.mesh.hostname != null then
+      ''
+        tailscale set --hostname=${lib.escapeShellArg cfg.mesh.hostname}
+      ''
+    else
+      ''
+        [ -s ${lib.escapeShellArg hostnameFile} ] || exit 0
+        tailscale set --hostname="$(cat ${lib.escapeShellArg hostnameFile})"
+      '';
 
   # `t3 pair` prints a block of text; a delegator wants only the code. It must run as the t3 user: the
   # code is minted in that user's data directory. The code is one-time and short-lived (default 5 m).
@@ -206,6 +216,15 @@ in
         default = "hostname";
         description = "File name in `secretsDir` that names the mesh node; read after each join.";
       };
+      hostname = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        example = "linux-h";
+        description = ''
+          A fixed mesh node name. When set, it is applied after each join and `hostnameFile` is not read.
+          Use it with a persistent `/var/lib/tailscale` so a restart keeps the node and its address.
+        '';
+      };
     };
 
     ready = {
@@ -213,6 +232,15 @@ in
         type = lib.types.str;
         default = ".ready";
         description = "File name in `secretsDir` written last; a new mtime starts the join and the server.";
+      };
+      restartUnits = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [ ];
+        example = [ "home-manager-user.service" ];
+        description = ''
+          Extra units restarted in the same call as the server when the marker changes, for work that
+          needs a secret from `secretsDir` (a clone with the agent token, for instance).
+        '';
       };
       pollInterval = lib.mkOption {
         type = lib.types.str;
@@ -268,6 +296,16 @@ in
             {
               assertion = config.networking.firewall.enable;
               message = "t3Connect needs networking.firewall.enable = true: t3 binds ${cfg.bind}, and only the firewall limits the port to the mesh interface.";
+            }
+            {
+              assertion =
+                cfg.mesh.hostname == null
+                || builtins.match "[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?" cfg.mesh.hostname != null;
+              message = "t3Connect.mesh.hostname must be a DNS label: lower case letters, digits and hyphens.";
+            }
+            {
+              assertion = lib.all (u: builtins.match "[A-Za-z0-9:_.@-]+" u != null) cfg.ready.restartUnits;
+              message = "t3Connect.ready.restartUnits: every entry must be a plain unit name.";
             }
             {
               assertion = !cfg.mesh.enable || lib.hasPrefix "https://" cfg.mesh.loginServer;
