@@ -43,3 +43,7 @@ code.claude.com/docs (settings, env vars), learn.chatgpt.com/docs/config-file, o
 **Set aside.** A user-less sandbox with the config in system locations (`/etc/claude-code`,
 `/etc/codex`, `$OPENCODE_CONFIG`): Claude's `managed-mcp.json` takes exclusive control of MCP servers
 (no `claude mcp add`), and the user asked for a basic user with its own home, not a bare image.
+
+**Amended by** [the t3-connect layer](t3-connect-layer.md): the guest modules still know nothing about how a
+sandbox is built. One separate, optional export, `nixosModules.t3-connect-host`, knows about a bridge and a
+firewall (not about microvm.nix, qemu or sandy), and a guest never imports it.
