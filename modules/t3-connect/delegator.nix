@@ -1,6 +1,6 @@
 # modules/t3-connect/delegator.nix
 # homeModules.t3-connect-delegator: the delegator's side of the t3-connect layer. The delegator is the
-# user's own T3 server (the Mac app's). It installs `t3-link-vm` and `t3-unlink-vm`, which link a
+# user's own T3 server (the Mac app's). It installs `t3-link-vm`, `t3-unlink-vm` and `t3-mesh-forget`, which link a
 # sandbox to it and forget one. The `t3` CLI must match the delegator's version; pass the matching package.
 # `reaper` (off by default, macOS) runs `t3-run-vm --reap-only` on a timer so a link whose wrapper died is
 # unlinked without a manual step. See docs/decisions/t3-connect-layer.md.
@@ -77,6 +77,7 @@ in
         inherit pkgs;
         t3 = cfg.package;
       })
+      (import ./mesh-forget.nix { inherit pkgs; })
     ];
   };
 }

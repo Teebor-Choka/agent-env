@@ -3,10 +3,12 @@
 # environment up in `t3 environment list --json` by id, label or URL and runs `t3 environment unlink`.
 # That removes only the delegator's entry. The sandbox keeps its own session for the link until it is
 # revoked in the sandbox's Connections, and the sandbox, its mesh node and its secrets are untouched.
+# `--forget-node HOST` also deletes the stopped guest's mesh node afterwards (t3-mesh-forget --yes).
 # Same version rule as t3-link-vm: the CLI writes the delegator's database.
 {
   pkgs,
   t3 ? pkgs.t3-server,
+  meshForget ? import ./mesh-forget.nix { inherit pkgs; },
 }:
 pkgs.writeShellApplication {
   name = "t3-unlink-vm";
@@ -17,16 +19,18 @@ pkgs.writeShellApplication {
   ];
   text = ''
     usage() {
-      echo "usage: t3-unlink-vm [--base-dir DIR] [--force] [--] <id|label|url>" >&2
+      echo "usage: t3-unlink-vm [--base-dir DIR] [--force] [--forget-node HOST] [--] <id|label|url>" >&2
       exit 2
     }
 
     base="$HOME/.t3"
     force=0
+    forget_node=""
     while [ $# -gt 0 ]; do
       case "$1" in
         --base-dir) base="''${2:?--base-dir needs a value}"; shift 2 ;;
         --force) force=1; shift ;;
+        --forget-node) forget_node="''${2:?--forget-node needs a hostname}"; shift 2 ;;
         -h | --help) usage ;;
         --) shift; break ;;
         -*) echo "t3-unlink-vm: unknown flag $1" >&2; usage ;;
@@ -36,6 +40,7 @@ pkgs.writeShellApplication {
     [ $# -eq 1 ] || usage
     name="$1"
     t3="''${T3_BIN:-${t3}/bin/t3}"
+    forget="''${T3_MESH_FORGET_BIN:-${meshForget}/bin/t3-mesh-forget}"
 
     ${import ./cli-version.nix "t3-unlink-vm"}
 
@@ -58,6 +63,12 @@ pkgs.writeShellApplication {
     status=0
     "$t3" environment unlink "$ids" --base-dir "$base" || status=$?
     [ "$status" -ne 0 ] || echo "t3-unlink-vm: forgot $ids here; revoke its session in that environment's Connections to end it there too" >&2
+    if [ "$status" -eq 0 ] && [ -n "$forget_node" ]; then
+      "$forget" --yes "$forget_node" || {
+        echo "t3-unlink-vm: unlinked $ids, but the mesh node '$forget_node' was not deleted" >&2
+        status=1
+      }
+    fi
     exit "$status"
   '';
 }

@@ -119,4 +119,39 @@ chmod +x "$TMP/bin/t3"
 rc=$(run other)
 [ "$rc" = 3 ] && ok "a failed unlink exits with the CLI's status" || bad "a failed unlink exits with the CLI's status (rc=$rc)"
 
+# 7. --forget-node deletes the stopped guest's mesh node after a successful unlink, by hostname
+new_env
+cat > "$TMP/forget" <<EOF4
+#!$BASH_BIN
+echo "forget \$*" >> "$LOG"
+[ -z "\${FAKE_FORGET_FAIL:-}" ] || { echo "no such node" >&2; exit 1; }
+EOF4
+chmod +x "$TMP/forget"
+export T3_MESH_FORGET_BIN="$TMP/forget"
+rc=$(run --forget-node linux-h other)
+[ "$rc" = 0 ] && grep -q "^forget --yes linux-h$" "$LOG" && ok "--forget-node forgets the mesh node after the unlink" || bad "--forget-node forgets the mesh node after the unlink (rc=$rc)"
+new_env
+export T3_MESH_FORGET_BIN="$TMP/forget"
+rc=$(run other)
+grep -q "^forget" "$LOG" && bad "no mesh deletion without the flag" || ok "no mesh deletion without the flag"
+new_env
+cat > "$TMP/forget" <<EOF5
+#!$BASH_BIN
+echo "forget \$*" >> "$LOG"
+echo "no such node" >&2
+exit 1
+EOF5
+chmod +x "$TMP/forget"
+export T3_MESH_FORGET_BIN="$TMP/forget"
+rc=$(run --forget-node linux-h other)
+[ "$rc" = 1 ] && grep -q "mesh node 'linux-h' was not deleted" "$TMP/err" && ok "a failed mesh deletion fails the command and says so" || bad "a failed mesh deletion fails the command and says so (rc=$rc)"
+grep -q "environment unlink id-ccc" "$LOG" && ok "the unlink still happened" || bad "the unlink still happened"
+new_env
+export T3_MESH_FORGET_BIN="$TMP/forget"
+export FAKE_LIST_FAIL=1
+rc=$(run --forget-node linux-h other)
+unset FAKE_LIST_FAIL
+grep -q "^forget" "$LOG" && bad "no mesh deletion when the unlink did not happen" || ok "no mesh deletion when the unlink did not happen"
+unset T3_MESH_FORGET_BIN
+
 exit $fail
