@@ -109,6 +109,7 @@ wrap `t3-sandbox` in a module of your own that sets it, and pass that.
 | Machine | Module |
 |---|---|
 | the guest (the server your phone or app connects to) | `nixosModules.t3-sandbox`, or `sandbox` plus `t3-connect` for finer control |
+| an image whose builder starts `t3 serve` itself, such as sandy (user, t3, ready probe, git credential helper; no service or mesh) | `nixosModules.t3-guest` |
 | the host that runs the guests (optional) | `nixosModules.t3-connect-host` |
 | the machine that runs the T3 app | `homeModules.t3-connect-delegator` |
 
@@ -117,6 +118,7 @@ The host fills the secrets directory before boot and writes the marker `.ready` 
 that is linked needs the mesh IPv6 address: a peer link refuses plain http except for loopback and the tailnet
 range `fd7a:115c:a1e0::/48`. Checks: `nix flake check --all-systems` evaluates the guest and host modules and
 runs the `t3-link-vm` and `t3-unlink-vm` suites; the rules are proven in two VMs with `nix build .#t3-connect-host-test -L` on a KVM host.
+From macOS with a Linux builder, add `--max-jobs 0`: `preferLocalBuild` derivations (`writeText`) otherwise run on the Mac and fail with `Undefined error: 0`.
 
 ## Updating
 
