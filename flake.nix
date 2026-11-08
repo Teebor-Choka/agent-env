@@ -134,6 +134,9 @@
       # The whole t3 guest in one import: `sandbox` plus `t3-connect`, wired together. Set
       # `t3Connect.mesh.loginServer`; import it instead of the two it combines.
       nixosModules.t3-sandbox = import ./modules/t3-connect/sandbox.nix { inherit self; };
+      # The image-side pieces of a T3 guest only (user, t3, readiness probe, github credential helper):
+      # no service, secret or mesh. For builders that start `t3 serve` themselves, such as sandy.
+      nixosModules.t3-guest = import ./modules/t3-connect/t3-guest.nix { inherit self; };
       # The same layer's host side, optional and separate: a bridge, NAT and a firewall that give
       # guests public egress only. A guest never imports it.
       nixosModules.t3-connect-host = import ./modules/t3-connect/host.nix { inherit self; };
@@ -267,6 +270,88 @@
             pkgs.writeText "sandbox-eval" (
               builtins.unsafeDiscardStringContext (
                 lib.concatMapStringsSep "\n" (sys: sys.config.system.build.toplevel.drvPath) systems'
+              )
+            );
+
+          # nixosModules.t3-guest: the image-side pieces of a T3 guest, with no service, secret or mesh. The
+          # generated script texts are exposed as `t3Guest.generated`, so no build is needed.
+          t3-guest-eval =
+            let
+              evalWith =
+                extra:
+                nixpkgs.lib.nixosSystem {
+                  modules = [
+                    self.nixosModules.t3-guest
+                    stubSystem
+                    {
+                      nixpkgs.overlays = [ self.overlays.default ];
+                      nixpkgs.config.allowUnfreePredicate = pkg: lib.getName pkg == "claude-code";
+                    }
+                    extra
+                  ];
+                };
+              off = evalWith { t3Guest.enable = false; };
+              on = evalWith { t3Guest.enable = true; };
+              custom = evalWith {
+                t3Guest = {
+                  enable = true;
+                  user = "agent";
+                  home = "/srv/agent";
+                  git.credentialHelper = false;
+                };
+              };
+              badHome = evalWith {
+                t3Guest = {
+                  enable = true;
+                  home = "relative/path";
+                };
+              };
+              badUser = evalWith {
+                t3Guest = {
+                  enable = true;
+                  user = "Bad User";
+                };
+              };
+              has = needle: hay: lib.hasInfix needle hay;
+              gen = sys: name: sys.config.t3Guest.generated.${name};
+              # programs.git.config merges into a list of attribute sets.
+              gitCfg = sys: lib.foldl' lib.recursiveUpdate { } (lib.toList sys.config.programs.git.config);
+              pkgNames = sys: map lib.getName sys.config.environment.systemPackages;
+              cases = {
+                "disabled adds no user and no probe" =
+                  !(off.config.users.users ? t3) && !(builtins.elem "t3-ready-probe" (pkgNames off));
+                "enabled adds a system user with its own home" =
+                  on.config.users.users.t3.isSystemUser
+                  && on.config.users.users.t3.home == "/var/lib/t3"
+                  && on.config.users.users.t3.group == "t3";
+                "enabled puts t3 and the probe in the image" =
+                  builtins.elem "t3-ready-probe" (pkgNames on) && builtins.elem "t3code" (pkgNames on);
+                "the image defines no service and no secret" =
+                  !(on.config.systemd.services ? t3-serve) && !(on.config.systemd.services ? t3-ready);
+                "the probe accepts any status below 500 and checks the port range" =
+                  has "65535" (gen on "probe") && has "-lt 500" (gen on "probe");
+                "the credential helper tries GH_TOKEN, then GITHUB_TOKEN, then the credential file" =
+                  has "GH_TOKEN" (gen on "credential")
+                  && has "GITHUB_TOKEN" (gen on "credential")
+                  && has "gh-token" (gen on "credential");
+                "the helper is registered for github.com over https" =
+                  lib.hasPrefix "!"
+                    (gitCfg on).credential."https://github.com".helper;
+                "user and home follow the options" = custom.config.users.users.agent.home == "/srv/agent";
+                "the helper can be turned off" = !((gitCfg custom) ? credential);
+                "a relative home is refused" = evalFails badHome;
+                "a user name that is not a login name is refused" = evalFails badUser;
+              };
+              failed = lib.attrNames (lib.filterAttrs (_: ok: !ok) cases);
+            in
+            assert lib.assertMsg (failed == [ ]) "t3-guest-eval failed: ${lib.concatStringsSep "; " failed}";
+            pkgs.writeText "t3-guest-eval" (
+              builtins.unsafeDiscardStringContext (
+                lib.concatMapStringsSep "\n" (sys: sys.config.system.build.toplevel.drvPath) [
+                  off
+                  on
+                  custom
+                ]
               )
             );
 
