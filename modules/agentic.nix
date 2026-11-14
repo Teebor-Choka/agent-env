@@ -115,6 +115,8 @@ let
 
   inherit (import ./shared.nix) headroomArgs headroomEnv codebaseMemoryMcpCmd;
 
+  cbmHeal = import ./cbm-heal.nix { inherit pkgs; };
+
 in
 {
   options.agentic = {
@@ -221,6 +223,14 @@ in
       the [1m] suffix is selected (this wires [1m] onto an explicitly-set ANTHROPIC_MODEL). Requires
       claudeProvider = "anthropic"'';
 
+    codebaseMemory.enable = lib.mkEnableOption ''
+      codebase-memory-mcp as part of the environment: the package, its registration in an existing
+      ~/.claude.json (an in-place merge, never an overwrite), and on macOS the cbm-heal launchd agent
+      that restarts the daemon when it wedges (every 10 minutes it probes with a real initialize request and
+      kills the daemon only on the -32001 error; it exits quietly if the server is not installed).
+      Independent of `enable`, so a host with no harness can carry it too; needs `user`. Turning it off
+      removes all three'';
+
     ephemeralDisk = lib.mkOption {
       type = lib.types.bool;
       default = true;
@@ -229,8 +239,8 @@ in
         files) rather than merge into them. true for a guest, where the disk is recreated fresh
         on every boot, so there is nothing accumulated to lose. The darwin host sets this false:
         its ~/.claude.json is Claude Code's real, persistent client state (oauthAccount, userID,
-        per-project trust, onboarding/usage counters) and must never be clobbered — home.nix's
-        own jq-merge activation script is the host's sole writer for that file instead.
+        per-project trust, onboarding/usage counters) and must never be clobbered — the host's
+        own scripts and the jq-merge in `codebaseMemory` are the only writers for that file instead.
       '';
     };
   };
@@ -610,6 +620,61 @@ in
             # ships a fix.
           ]
         ))
+      ]
+    ))
+
+    # codebase-memory-mcp as one removable unit, independent of `enable`: the package, the
+    # registration, and on macOS the wedge watchdog. The platform picks the service-manager tree with a
+    # plain if/else for the same reason as the headroom proxy above (launchd does not exist on NixOS).
+    (lib.mkIf cfg.codebaseMemory.enable (
+      lib.mkMerge [
+        {
+          environment.systemPackages = [ pkgs.codebase-memory-mcp ];
+
+          # In-place merge of the one mcpServers key. ~/.claude.json is Claude Code's OWN live state
+          # (project history, auth), so it is never overwritten here. A read-only store symlink (a
+          # guest, where the file is written declaratively) and a missing file (Claude Code has
+          # never run) are both skipped. Idempotent: backs up and rewrites only when the block differs.
+          home-manager.users.${user} =
+            { lib, pkgs, ... }:
+            {
+              home.activation.claudeMcpCodebaseMemory = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+                f="$HOME/.claude.json"
+                if [ -f "$f" ] && [ ! -L "$f" ]; then
+                  desired=$(${pkgs.jq}/bin/jq -cn \
+                    '{type:"stdio",command:"codebase-memory-mcp",args:[],alwaysLoad:true}')
+                  current=$(${pkgs.jq}/bin/jq -c '.mcpServers["codebase-memory-mcp"] // empty' "$f" 2>/dev/null || true)
+                  if [ "$current" != "$desired" ]; then
+                    $DRY_RUN_CMD cp -p "$f" "/tmp/claude.json.codebase-memory-bak.$(date +%Y%m%d-%H%M%S)"
+                    tmp="$(mktemp "$f.cm.XXXXXX")"
+                    if ${pkgs.jq}/bin/jq --argjson cm "$desired" '.mcpServers["codebase-memory-mcp"] = $cm' "$f" > "$tmp"; then
+                      chmod 600 "$tmp"
+                      $DRY_RUN_CMD mv "$tmp" "$f"
+                    fi
+                    rm -f "$tmp"
+                  fi
+                fi
+              '';
+            };
+        }
+        (
+          if isLinuxHost then
+            { }
+          else
+            {
+              # Per-user agent, like the headroom proxy: not launchd.agents, which loads as root. The
+              # daemon wedges after days of uptime and every new client then fails with -32001 after
+              # 30s; this polls and restarts it only then. The package is in the system profile, so
+              # the PATH below finds codebase-memory-mcp; pkill is in /usr/bin.
+              launchd.user.agents.cbm-heal.serviceConfig = {
+                ProgramArguments = [ "${cbmHeal}/bin/cbm-heal" ];
+                StartInterval = 600;
+                ProcessType = "Background";
+                EnvironmentVariables.PATH = "/run/current-system/sw/bin:/usr/bin:/bin";
+                StandardErrorPath = "/Users/${user}/Library/Logs/cbm-heal.log";
+              };
+            }
+        )
       ]
     ))
   ];

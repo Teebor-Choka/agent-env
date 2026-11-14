@@ -984,6 +984,18 @@
                 bash ${./tests/agent-plugins-suite.sh} ${records} ${fix}
                 touch "$out"
               '';
+
+          # The cbm-heal watchdog (agentic.codebaseMemory): restarts the codebase-memory-mcp daemon on the
+          # -32001 wedge error only, and exits quietly when the server is not installed. Runs the packaged
+          # script against stub binaries. See tests/cbm-heal-suite.sh.
+          cbm-heal =
+            let
+              cbmHeal = import ./modules/cbm-heal.nix { inherit pkgs; };
+            in
+            pkgs.runCommand "cbm-heal" { nativeBuildInputs = [ pkgs.bash ]; } ''
+              bash ${./tests/cbm-heal-suite.sh} ${cbmHeal}/bin/cbm-heal
+              touch "$out"
+            '';
         }
       );
 
