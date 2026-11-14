@@ -33,8 +33,16 @@ agentic = {
   user = "me";
   tools = [ "claude" "opencode" "codex" ];
   compression = true;   # local headroom proxy; Claude is routed through it when it listens
+  codebaseMemory.enable = true;   # code-graph MCP server: package, registration, macOS watchdog
 };
 ```
+
+`agentic.codebaseMemory.enable` (default off, independent of `enable`) installs `codebase-memory-mcp`,
+registers it in an existing `~/.claude.json` with an in-place merge (never an overwrite), and on nix-darwin
+runs `cbm-heal` as a per-user launchd agent every 10 minutes. The daemon wedges after days of uptime and
+every new client then fails with JSON-RPC `-32001`; the watchdog restarts it on that error only, and exits
+quietly when the server is not installed. Setting the option back to `false` removes all three. It needs
+`agentic.user` for the registration.
 
 `nixosModules.sandbox` is a basic `user@sandbox` for a bare guest such as a sandy VM: one ordinary account
 (`sandbox.user`, default `user`) with a minimal home, the harnesses you pick (`sandbox.tools`, default
