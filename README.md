@@ -1,9 +1,16 @@
 # agent-env
 
 The agentic environment for an agent sandbox, as Nix: the [headroom-ai](https://pypi.org/project/headroom-ai/) package, plus the NixOS and nix-darwin modules that set up
-the harnesses (claude-code, opencode, codex, omp) around it. headroom has no nixpkgs equivalent; it is built with
+the harnesses (claude-code, pi, omp, codex, opencode) around it. headroom has no nixpkgs equivalent; it is built with
 [uv2nix](https://github.com/pyproject-nix/uv2nix) from a pinned `pyproject.toml` + `uv.lock`, so
 it ships as real `buildPythonPackage`-based derivations instead of a runtime `uvx` fetch.
+
+## Supported harnesses
+
+Everything the consuming environment sets up here exists so that Claude Code, pi, omp, Codex and
+OpenCode work: their skills, plugins, hooks and config. No other harness is required to work, and
+nothing is added for one. Claude Code, Codex, omp and pi get plugins natively; OpenCode gets raw
+skills (see `docs/decisions/native-plugins-per-harness.md`).
 
 ## Why this exists
 
