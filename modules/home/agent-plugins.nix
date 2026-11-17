@@ -78,10 +78,12 @@ let
     mkdir -p $out/.claude-plugin
     cp ${
       pkgs.writeText "marketplace.json" (
-        builtins.toJSON (agentLib.marketplaceManifest {
-          name = mkName;
-          names = pluginNames;
-        })
+        builtins.toJSON (
+          agentLib.marketplaceManifest {
+            name = mkName;
+            names = pluginNames;
+          }
+        )
       )
     } $out/.claude-plugin/marketplace.json
     ${concatStringsSep "\n" (

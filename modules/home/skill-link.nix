@@ -76,7 +76,9 @@ in
       for target in ${
         concatStringsSep " " (
           map escapeShellArg (
-            [ cfg.target ] ++ cfg.extraTargets ++ lib.optional (cfg.claudePluginDir != null) "${cfg.claudePluginDir}/skills"
+            [ cfg.target ]
+            ++ cfg.extraTargets
+            ++ lib.optional (cfg.claudePluginDir != null) "${cfg.claudePluginDir}/skills"
           )
         )
       }; do
