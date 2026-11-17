@@ -962,14 +962,28 @@
           agent-plugins-lib =
             let
               fix = "${./tests/fixtures/agent-plugins}";
-              ps = (import ./modules/home/agent-plugins-lib.nix { inherit lib; }).normalize {
+              l = import ./modules/home/agent-plugins-lib.nix { inherit lib; };
+              ps = l.normalize {
                 src = fix;
                 exclude = [ "skipme" ];
               };
+              names = [
+                "alpha"
+                "swe-workflows"
+              ];
               records = pkgs.writeText "agent-plugins.json" (
                 builtins.toJSON {
                   names = map (p: p.name) ps;
                   byName = lib.listToAttrs (map (p: lib.nameValuePair p.name p) ps);
+                  manifest = l.marketplaceManifest {
+                    name = "agent-env";
+                    inherit names;
+                  };
+                  codex = l.codexConfig {
+                    marketplace = "agent-env";
+                    path = "/store/mk";
+                    inherit names;
+                  };
                 }
               );
             in

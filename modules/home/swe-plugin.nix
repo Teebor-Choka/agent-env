@@ -78,8 +78,11 @@ in
 
     skillsTarget = mkOption {
       type = types.str;
-      default = config.home.agentPlugins.skillsTarget;
-      description = "Cross-harness skills dir read by oh-my-pi, OpenCode, and Codex.";
+      default = config.home.agentPlugins.pluginSkillsTarget;
+      description = ''
+        Where the plugin skills are linked raw: ~/.agents/skills, or OpenCode's own dir when
+        `home.agentPlugins.native` delivers them to Codex, omp and pi as plugins.
+      '';
     };
 
     codexBaseConfig = mkOption {

@@ -42,6 +42,16 @@ in
         writes there, are left alone.
       '';
     };
+    claudePluginDir = mkOption {
+      type = types.nullOr types.str;
+      default = null;
+      description = ''
+        Also link the skills into `<dir>/skills` and write `<dir>/.claude-plugin/plugin.json`
+        (plugin name = the dir's basename), so Claude Code loads them as one namespaced plugin
+        through `--plugin-dir` instead of from a loose ~/.claude/skills. Put it under
+        ~/.claude/plugin-dirs, the dir the `claude` function of home.agentPlugins globs.
+      '';
+    };
     exclude = mkOption {
       type = types.listOf types.str;
       default = [ ];
@@ -52,7 +62,26 @@ in
   config = mkIf cfg.enable {
     home.activation.skillLink = lib.hm.dag.entryAfter [ "gitClone" ] ''
       excl=${escapeShellArg " ${concatStringsSep " " cfg.exclude} "}
-      for target in ${concatStringsSep " " (map escapeShellArg ([ cfg.target ] ++ cfg.extraTargets))}; do
+      ${lib.optionalString (cfg.claudePluginDir != null) ''
+        $DRY_RUN_CMD mkdir -p ${escapeShellArg "${cfg.claudePluginDir}/.claude-plugin"}
+        $DRY_RUN_CMD ln -sfn ${
+          pkgs.writeText "plugin.json" (
+            builtins.toJSON {
+              name = baseNameOf cfg.claudePluginDir;
+              description = "Skills from home.skillLink sources, linked live from their checkouts.";
+            }
+          )
+        } ${escapeShellArg "${cfg.claudePluginDir}/.claude-plugin/plugin.json"}
+      ''}
+      for target in ${
+        concatStringsSep " " (
+          map escapeShellArg (
+            [ cfg.target ]
+            ++ cfg.extraTargets
+            ++ lib.optional (cfg.claudePluginDir != null) "${cfg.claudePluginDir}/skills"
+          )
+        )
+      }; do
         if [ -e "$target/.git" ]; then
           echo "skillLink: ERROR $target is a git checkout — back it up and remove it, then re-run." >&2
           exit 1

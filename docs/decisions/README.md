@@ -10,5 +10,6 @@ updated: 2026-11-06
 - [The environment modules live here, not with the sandbox builder](environment-modules.md)
 - [The t3-connect layer: a switchable setup for reaching a sandbox from T3 Code](t3-connect-layer.md)
 - [Drop code-context-engine](drop-code-context-engine.md)
+- [Native plugins per harness, raw skills for the rest](native-plugins-per-harness.md)
 - [One combined environment, not a package per tool](single-combined-environment.md) (superseded)
 - [pillow vulnerabilities left unpatched, blocked on fastembed](pillow-cve-blocked-upstream.md) (resolved)

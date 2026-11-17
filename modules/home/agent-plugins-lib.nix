@@ -29,6 +29,39 @@ let
       lib.removeSuffix "\"" (lib.removePrefix "\"" (lib.trim (lib.removePrefix "name:" line)));
 in
 {
+  # The marketplace Codex and omp read: `.claude-plugin/marketplace.json` over one dir-mode entry per
+  # plugin closure (Codex requires every local source inside the marketplace root).
+  marketplaceManifest =
+    { name, names }:
+    {
+      inherit name;
+      # omp rejects a catalog with no `owner`.
+      owner.name = "agent-env";
+      plugins = map (n: {
+        name = n;
+        source = "./${n}";
+      }) names;
+    };
+
+  # Codex `config.toml` tables: a local marketplace plus an enable per plugin. The files stay read-only
+  # (the store); `codex plugin add` then only fills the plugin cache, which never touches the config.
+  codexConfig =
+    {
+      marketplace,
+      path,
+      names,
+    }:
+    ''
+      [marketplaces.${marketplace}]
+      source_type = "local"
+      source = "${path}"
+    ''
+    + lib.concatMapStrings (n: ''
+
+      [plugins."${n}@${marketplace}"]
+      enabled = true
+    '') names;
+
   normalize =
     {
       src,
