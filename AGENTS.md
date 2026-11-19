@@ -19,6 +19,7 @@ built the way it is.
 | `tests/sandbox-boot.sh` | Live boot test, `nix run .#test-sandbox` (needs sandy; never run in CI) |
 | `modules/home/` | home-manager modules: `home.agentPlugins`, `home.skillLink`, `home.swePlugin` |
 | `tests/` | `agent-plugins-suite.sh` and its fixtures, run as `checks.<system>.agent-plugins-lib` |
+| `tests/hooks-render-suite.sh`, `tests/hooks-cases.nix` | The neutral hook manifest (`hooks/manifest.json`): `validateHooks` and `renderClaudeHooks` in `agent-plugins-lib.nix`, run as `checks.<system>.hooks-render` |
 | `tests/cbm-heal-suite.sh` | The watchdog against stub binaries, run as `checks.<system>.cbm-heal` |
 | `tests/t3-link-vm.sh`, `tests/t3-unlink-vm.sh`, `tests/t3-connect-host-vm.nix` | the `t3-link-vm` and `t3-unlink-vm` suites (`checks.<system>.t3-link-vm`) and the two-VM proof of the host rules (`packages.x86_64-linux.t3-connect-host-test`, needs KVM, never in CI) |
 | `pyproject.toml` | Pins the package version (the only "dependency" this project has) |
