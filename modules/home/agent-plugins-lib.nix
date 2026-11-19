@@ -62,6 +62,9 @@ in
       enabled = true
     '') names;
 
+  # STUB (red step): replaced by the real validator.
+  validateHooks = _: [ ];
+
   # A plugin's neutral `hooks/manifest.json` -> Claude Code's `hooks.json`. Hooks sharing an event and
   # matcher join one group, in manifest order. The script path is quoted: `claude plugin validate`
   # warns on a bare ${CLAUDE_PLUGIN_ROOT}.
