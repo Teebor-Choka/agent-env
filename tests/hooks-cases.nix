@@ -123,7 +123,7 @@ in
   errScriptBackslash = errs [ (h "a" "stop" { script = "hooks/a\\"; }) ];
   errScriptEmpty = errs [ (h "a" "stop" { script = ""; }) ];
   errScriptSpace = errs [ (h "a" "stop" { script = "hooks/a b.sh"; }) ];
-  errScriptUnicode = errs [ (h "a" "stop" { script = "hooks/\u00e9.sh"; }) ];
+  errScriptUnicode = errs [ (h "a" "stop" { script = "hooks/é.sh"; }) ];
   validScriptChars = errs [ (h "a" "stop" { script = "hooks/Dir_1/a-b.v2.sh"; }) ];
 
   # A2: wrong types give one message per field and never throw.
