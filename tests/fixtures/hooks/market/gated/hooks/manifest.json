@@ -1,0 +1,19 @@
+{
+  "hooks": [
+    {
+      "id": "policy-gate",
+      "event": "tool.before",
+      "tools": ["shell"],
+      "script": "hooks/gate.sh",
+      "enforce": "block"
+    },
+    {
+      "id": "policy-context",
+      "event": "session.start",
+      "matcher": "startup|resume",
+      "script": "hooks/policy-context.sh",
+      "timeout": 10,
+      "enforce": "warn"
+    }
+  ]
+}

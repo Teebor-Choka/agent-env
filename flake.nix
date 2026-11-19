@@ -999,6 +999,27 @@
                 touch "$out"
               '';
 
+          # Neutral hook manifest -> Claude hooks.json (agent-plugins-lib `renderClaudeHooks`). Cases are
+          # evaluated here (the sandbox has no nix), then compared by the suite's jq checks.
+          hooks-render =
+            let
+              fix = "${./tests/fixtures/hooks}";
+              cases = pkgs.writeText "hooks-cases.json" (
+                builtins.toJSON (import ./tests/hooks-cases.nix { inherit lib fix; })
+              );
+            in
+            pkgs.runCommand "hooks-render"
+              {
+                nativeBuildInputs = [
+                  pkgs.bash
+                  pkgs.jq
+                ];
+              }
+              ''
+                bash ${./tests/hooks-render-suite.sh} ${cases} ${fix}
+                touch "$out"
+              '';
+
           # The cbm-heal watchdog (agentic.codebaseMemory): restarts the codebase-memory-mcp daemon on the
           # -32001 wedge error only, and exits quietly when the server is not installed. Runs the packaged
           # script against stub binaries. See tests/cbm-heal-suite.sh.
