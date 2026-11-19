@@ -50,5 +50,13 @@ check "an unclassified rendered top-level entry fails" 1 "$rc"; contains "names 
 fresh; mkdir "$work/l/projects" && echo x >"$work/l/projects/p"; run
 check "runtime state in live is ignored" 0 "$rc"
 
+# plugin-dirs entries are symlinks to directories (store paths): compare the trees they point at.
+linkdirs() { mkdir -p "$work/$1/plugin-dirs" "$work/$1-store/p"; echo "${2:-same}" >"$work/$1-store/p/f"; ln -s "$work/$1-store/p" "$work/$1/plugin-dirs/p"; }
+fresh; linkdirs r; linkdirs l; run
+check "equal symlinked plugin dirs compare equal" 0 "$rc"
+fresh; linkdirs r; linkdirs l other; run
+check "differing symlinked plugin dirs fail" 1 "$rc"; contains "names it" "plugin-dirs/p" "$out"
+rm -rf "$work/r-store" "$work/l-store"
+
 fresh; run; contains "prints a summary" "compared" "$out"
 exit $fail
