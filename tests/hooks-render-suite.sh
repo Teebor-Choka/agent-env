@@ -129,7 +129,7 @@ if [ "$standalone" = 1 ]; then
     builtins.deepSeq true (builtins.head (builtins.filter (p: p.name == \"badjson\")
       ((import ./modules/home/agent-plugins-lib.nix { lib = ($lib); }).normalize { src = \"$fix/market\"; })) ).hooks" 2>&1 >/dev/null || true)
   check "a malformed manifest fails that plugin's hooks" '1' \
-    "$(grep -c 'not valid JSON\|parse_error' <<<"$err" || true)"
+    "$(grep -c 'parse_error' <<<"$err" || true)"
   check "a malformed manifest error names the plugin" '1' \
     "$(grep -cF 'plugin badjson: hooks/manifest.json is not valid JSON' <<<"$err" || true)"
 fi
