@@ -227,7 +227,9 @@ in
           isDir = rel p.source != "";
           root = if isDir then join src p.source else null;
           skills =
-            if isDir then
+            if isDir && !(builtins.pathExists "${root}/skills") then
+              { }
+            else if isDir then
               listToAttrs (
                 map (n: nameValuePair n "${root}/skills/${n}") (
                   attrNames (lib.filterAttrs (_: t: t == "directory") (builtins.readDir "${root}/skills"))
