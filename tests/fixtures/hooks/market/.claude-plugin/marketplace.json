@@ -18,6 +18,26 @@
       "name": "bare",
       "description": "Hooks only: no skills/ directory",
       "source": "./bare"
+    },
+    {
+      "name": "badjson",
+      "description": "Malformed hooks/manifest.json (trailing comma)",
+      "source": "./badjson"
+    },
+    {
+      "name": "hookjson",
+      "description": "Hooks-only via hooks/hooks.json",
+      "source": "./hookjson"
+    },
+    {
+      "name": "ghost",
+      "description": "Source dir does not exist",
+      "source": "./ghost"
+    },
+    {
+      "name": "renamed",
+      "description": "Has a skill dir but no skills/ and no hooks",
+      "source": "./renamed"
     }
   ]
 }

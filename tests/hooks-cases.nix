@@ -19,6 +19,7 @@ let
     // extra;
   render = hooks: l.renderClaudeHooks { inherit hooks; };
   errs = hooks: l.validateHooks { inherit hooks; };
+  fails' = v: !(builtins.tryEval (builtins.deepSeq v true)).success;
   fails = hooks: !(builtins.tryEval (builtins.deepSeq (render hooks) true)).success;
 in
 {
@@ -116,4 +117,55 @@ in
   # The renderer throws on any validation error, and renders the same hook once it is valid.
   invalidFails = fails [ (h "a" "tool.before" { tools = [ ]; }) ];
   validControl = !(fails [ (h "a" "tool.before" { tools = [ "shell" ]; }) ]);
+
+  # A1: the script allowlist. Newline, trailing backslash, empty, space and unicode all fail.
+  errScriptNewline = errs [ (h "a" "stop" { script = "hooks/a\n$(cmd)"; }) ];
+  errScriptBackslash = errs [ (h "a" "stop" { script = "hooks/a\\"; }) ];
+  errScriptEmpty = errs [ (h "a" "stop" { script = ""; }) ];
+  errScriptSpace = errs [ (h "a" "stop" { script = "hooks/a b.sh"; }) ];
+  errScriptUnicode = errs [ (h "a" "stop" { script = "hooks/\u00e9.sh"; }) ];
+  validScriptChars = errs [ (h "a" "stop" { script = "hooks/Dir_1/a-b.v2.sh"; }) ];
+
+  # A2: wrong types give one message per field and never throw.
+  errHookNotAttrs = errs [ "x" ];
+  errIdNum = errs [ ((h "a" "stop" { }) // { id = 5; }) ];
+  errEventNum = errs [ ((h "a" "stop" { }) // { event = 5; }) ];
+  errScriptNum = errs [ (h "a" "stop" { script = 5; }) ];
+  errToolsString = errs [ (h "a" "tool.before" { tools = "shell"; }) ];
+  errToolsNonString = errs [ (h "a" "tool.before" { tools = [ 5 ]; }) ];
+  errMatcherNum = errs [ (h "a" "stop" { matcher = 5; }) ];
+  errEnforceNum = errs [ (h "a" "stop" { enforce = 5; }) ];
+  errTimeoutString = errs [ (h "a" "stop" { timeout = "5"; }) ];
+  errTimeoutZero = errs [ (h "a" "stop" { timeout = 0; }) ];
+  errTimeoutNegative = errs [ (h "a" "stop" { timeout = -1; }) ];
+  errTimeoutFloat = errs [ (h "a" "stop" { timeout = 1.5; }) ];
+  validTimeout = errs [ (h "a" "stop" { timeout = 5; }) ];
+
+  # A3: a malformed hooks/manifest.json breaks only that plugin's `hooks`.
+  badjsonName = byName.badjson.name;
+  badjsonSkillNames = byName.badjson.skillNames;
+  # (forcing its `hooks` aborts the eval: tryEval cannot catch a JSON parse error, so the suite's
+  # standalone mode checks that in its own nix eval.)
+  # A4: a missing skills/ is allowed only for a hooks-only plugin.
+  hookjsonSkillNames = byName.hookjson.skillNames;
+  ghostSkillsFail = fails' byName.ghost.skillNames;
+  renamedSkillsFail = fails' byName.renamed.skillNames;
+
+  # A5: the exact message the renderer throws, and grouping.
+  invalidMessage = l.invalidManifestMessage (errs [ (h "bad-hook" "tool.sideways" { }) ]);
+  mixedMatcher = render [
+    (h "a" "tool.before" { matcher = "Bash"; })
+    (h "b" "tool.before" { tools = [ "shell" ]; })
+  ];
+  compactMerge = render [
+    (h "a" "session.start" { matcher = "compact"; })
+    (h "b" "compact" { })
+  ];
+  compactMergeReverse = render [
+    (h "b" "compact" { })
+    (h "a" "session.start" { matcher = "compact"; })
+  ];
+  # A6: enforce is validated, not rendered: block and warn render identically.
+  enforceSame =
+    render [ (h "a" "stop" { enforce = "block"; }) ] == render [ (h "a" "stop" { enforce = "warn"; }) ];
 }
