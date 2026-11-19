@@ -27,7 +27,7 @@ no_line() { # label line output
   if grep -qxF -- "$2" <<<"$3"; then echo "FAIL $tag $1: unexpected line '$2' in: $3"; fail=1; else echo "ok   $tag $1"; fi
 }
 smode() { if stat -c %a / >/dev/null 2>&1; then stat -c %a "$1"; else stat -f %Lp "$1"; fi; }
-fresh() { rm -rf "$work/r" "$work/l"; cp -R "$fix/render" "$work/r"; cp -R "$fix/live" "$work/l"; chmod -R u+w "$work/r" "$work/l"; }
+fresh() { rm -rf "$work/r" "$work/l" "$work/r-store" "$work/l-store" "$work/r-skills" "$work/l-skills"; cp -R "$fix/render" "$work/r"; cp -R "$fix/live" "$work/l"; chmod -R u+w "$work/r" "$work/l"; }
 runargs() { set +e; "$sh" "$cmp" --classes "$classes" "$@" >"$work/out" 2>&1; rc=$?; set -e; out=$(<"$work/out"); }
 run() { runargs "$work/r" "$work/l"; }
 
