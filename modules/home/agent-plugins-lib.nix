@@ -62,6 +62,9 @@ in
       enabled = true
     '') names;
 
+  # STUB (red step): replaced by the real renderer.
+  renderClaudeHooks = _: { };
+
   normalize =
     {
       src,
@@ -90,6 +93,7 @@ in
           version = p.metadata.version or null;
           author = manifest.owner or null;
           inherit root skills;
+          hooks = null;
           skillNames = attrNames skills;
         };
     in
