@@ -12,8 +12,8 @@ contains() { # label needle output
 }
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
-fresh() { rm -rf "$work/r" "$work/l"; cp -R "$fix/render" "$work/r"; cp -R "$fix/live" "$work/l"; }
-run() { set +e; "$cmp" --classes "$classes" "$work/r" "$work/l" >"$work/out" 2>&1; rc=$?; set -e; out=$(<"$work/out"); }
+fresh() { rm -rf "$work/r" "$work/l"; cp -R "$fix/render" "$work/r"; cp -R "$fix/live" "$work/l"; chmod -R u+w "$work/r" "$work/l"; }
+run() { set +e; bash "$cmp" --classes "$classes" "$work/r" "$work/l" >"$work/out" 2>&1; rc=$?; set -e; out=$(<"$work/out"); }
 
 fresh; run; check "identical generated config, live-only state and secrets ignored" 0 "$rc"
 

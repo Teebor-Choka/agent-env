@@ -22,6 +22,7 @@
   ],
   "state": [
     ".DS_Store",
+    ".claude",
     ".git",
     ".gitignore",
     ".last-cleanup",
