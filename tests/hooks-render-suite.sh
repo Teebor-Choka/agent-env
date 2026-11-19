@@ -24,6 +24,8 @@ get() { jq -c "$1" <<<"$out"; }
 check "swe-workflows-shaped manifest renders the Claude hooks.json" \
   "$(jq -cS . <<<"$(get .expectedGated)")" "$(jq -cS . <<<"$(get .gated)")"
 check "a plugin without hooks/manifest.json has no hooks" 'null' "$(get '.plainHooks')"
+check "a hooks-only plugin (no skills/ dir) normalizes" 'true' "$(get '.bareNormalizes')"
+check "a hooks-only plugin has no skills" '[]' "$(get '.bareSkillNames')"
 check "no hooks renders an empty event map" '{"hooks":{}}' "$(get '.empty')"
 check "tool aliases join into one matcher, in listed order" '"Edit|Write|MultiEdit|Bash"' \
   "$(get '.multiTool.hooks.PreToolUse[0].matcher')"

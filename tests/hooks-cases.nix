@@ -25,6 +25,9 @@ in
   gated = l.renderClaudeHooks byName.gated.hooks;
   expectedGated = builtins.fromJSON (builtins.readFile "${fix}/market/gated-expected-claude.json");
   plainHooks = byName.plain.hooks;
+  # A plugin with hooks and no skills/ directory must still normalize (home.agentPlugins forces skillNames).
+  bareNormalizes = (builtins.tryEval (builtins.deepSeq byName.bare.skillNames true)).success;
+  bareSkillNames = (builtins.tryEval byName.bare.skillNames).value;
   empty = render [ ];
   multiTool = render [
     (h "a" "tool.before" {

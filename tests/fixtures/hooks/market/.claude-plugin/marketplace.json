@@ -1,8 +1,23 @@
 {
   "name": "fixture-hooks",
-  "owner": { "name": "Fixture Owner" },
+  "owner": {
+    "name": "Fixture Owner"
+  },
   "plugins": [
-    { "name": "gated", "description": "Dir-mode plugin with a hook manifest", "source": "./gated" },
-    { "name": "plain", "description": "Dir-mode plugin without hooks", "source": "./plain" }
+    {
+      "name": "gated",
+      "description": "Dir-mode plugin with a hook manifest",
+      "source": "./gated"
+    },
+    {
+      "name": "plain",
+      "description": "Dir-mode plugin without hooks",
+      "source": "./plain"
+    },
+    {
+      "name": "bare",
+      "description": "Hooks only: no skills/ directory",
+      "source": "./bare"
+    }
   ]
 }
