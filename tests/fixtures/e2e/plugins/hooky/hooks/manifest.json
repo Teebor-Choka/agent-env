@@ -1,0 +1,7 @@
+{
+  "hooks": [
+    {"id": "guard", "event": "tool.before", "tools": ["shell"], "script": "hooks/guard.sh", "enforce": "block"},
+    {"id": "edit-guard", "event": "tool.before", "tools": ["file.edit"], "script": "hooks/guard.sh", "enforce": "warn"},
+    {"id": "notice", "event": "session.start", "script": "hooks/notice.py", "enforce": "warn", "timeout": 10}
+  ]
+}

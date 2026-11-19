@@ -1,0 +1,9 @@
+{
+  "generated_dirs": ["agents", "commands", "output-styles", "plugin-dirs"],
+  "generated_files": [],
+  "generated_links": [],
+  "settings": { "file": "settings.json" },
+  "merged_files": [],
+  "secret": [".credentials.json", "session-env"],
+  "state": []
+}
