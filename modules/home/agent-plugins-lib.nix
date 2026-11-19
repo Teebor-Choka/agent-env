@@ -62,8 +62,71 @@ in
       enabled = true
     '') names;
 
-  # STUB (red step): replaced by the real renderer.
-  renderClaudeHooks = _: { };
+  # A plugin's neutral `hooks/manifest.json` -> Claude Code's `hooks.json`. Hooks sharing an event and
+  # matcher join one group, in manifest order. The script path is quoted: `claude plugin validate`
+  # warns on a bare ${CLAUDE_PLUGIN_ROOT}.
+  renderClaudeHooks =
+    manifest:
+    let
+      events = {
+        "session.start".event = "SessionStart";
+        "session.end".event = "SessionEnd";
+        "prompt.submit".event = "UserPromptSubmit";
+        "tool.before".event = "PreToolUse";
+        "tool.after".event = "PostToolUse";
+        "subagent.start".event = "SubagentStart";
+        "stop".event = "Stop";
+        "compact" = {
+          event = "SessionStart";
+          matcher = "compact";
+        };
+      };
+      tools = {
+        "shell" = "Bash";
+        "file.read" = "Read";
+        "file.edit" = "Edit|Write|MultiEdit";
+        "agent.spawn" = "Agent";
+        "ask.user" = "AskUserQuestion";
+        "message.send" = "SendMessage";
+        "wake.schedule" = "ScheduleWakeup";
+      };
+      resolve =
+        h:
+        let
+          ev = events.${h.event} or (throw "hook ${h.id}: unknown event \"${h.event}\"");
+          tool = t: tools.${t} or (throw "hook ${h.id}: unknown tool alias \"${t}\"");
+        in
+        {
+          inherit (ev) event;
+          matcher =
+            if h ? tools then lib.concatStringsSep "|" (map tool h.tools) else h.matcher or ev.matcher or null;
+          entry = {
+            type = "command";
+            command = "\"\${CLAUDE_PLUGIN_ROOT}/${h.script}\"";
+          }
+          // lib.optionalAttrs ((h.timeout or null) != null) { inherit (h) timeout; };
+        };
+      add =
+        acc: r:
+        let
+          groups = acc.${r.event} or [ ];
+          i = lib.lists.findFirstIndex (g: (g.matcher or null) == r.matcher) null groups;
+        in
+        acc
+        // {
+          ${r.event} =
+            if i == null then
+              groups
+              ++ [
+                (lib.optionalAttrs (r.matcher != null) { inherit (r) matcher; } // { hooks = [ r.entry ]; })
+              ]
+            else
+              lib.imap0 (j: g: if j == i then g // { hooks = g.hooks ++ [ r.entry ]; } else g) groups;
+        };
+    in
+    {
+      hooks = builtins.foldl' add { } (map resolve manifest.hooks);
+    };
 
   normalize =
     {
@@ -93,7 +156,12 @@ in
           version = p.metadata.version or null;
           author = manifest.owner or null;
           inherit root skills;
-          hooks = null;
+          # The neutral manifest, parsed; null when the plugin ships none (or has no dir of its own).
+          hooks =
+            if root != null && builtins.pathExists "${root}/hooks/manifest.json" then
+              builtins.fromJSON (builtins.readFile "${root}/hooks/manifest.json")
+            else
+              null;
           skillNames = attrNames skills;
         };
     in

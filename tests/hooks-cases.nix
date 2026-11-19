@@ -9,7 +9,14 @@ let
       value = p;
     }) (l.normalize { src = "${fix}/market"; })
   );
-  h = id: event: extra: { inherit id event; script = "hooks/${id}.sh"; enforce = "warn"; } // extra;
+  h =
+    id: event: extra:
+    {
+      inherit id event;
+      script = "hooks/${id}.sh";
+      enforce = "warn";
+    }
+    // extra;
   render = hooks: l.renderClaudeHooks { inherit hooks; };
   fails = hooks: !(builtins.tryEval (builtins.deepSeq (render hooks) true)).success;
 in
@@ -19,7 +26,12 @@ in
   plainHooks = byName.plain.hooks;
   empty = render [ ];
   multiTool = render [
-    (h "a" "tool.before" { tools = [ "file.edit" "shell" ]; })
+    (h "a" "tool.before" {
+      tools = [
+        "file.edit"
+        "shell"
+      ];
+    })
   ];
   grouped = render [
     (h "a" "tool.before" { tools = [ "shell" ]; })
