@@ -1020,6 +1020,26 @@
                 touch "$out"
               '';
 
+          # Rendered-vs-live Claude config comparison (modules/home/claude-config-compare.sh): generated
+          # dirs, declared settings keys, secrets and runtime state. See tests/config-compare-suite.sh.
+          config-compare =
+            pkgs.runCommand "config-compare"
+              {
+                nativeBuildInputs = [
+                  pkgs.bash
+                  pkgs.jq
+                  pkgs.diffutils
+                  pkgs.findutils
+                  pkgs.coreutils
+                  pkgs.gnugrep
+                  pkgs.gnused
+                ];
+              }
+              ''
+                bash ${./tests/config-compare-suite.sh} ${./modules/home/claude-config-compare.sh} ${./modules/home/claude-config-classes.json} ${./tests/fixtures/config-compare}
+                touch "$out"
+              '';
+
           # The cbm-heal watchdog (agentic.codebaseMemory): restarts the codebase-memory-mcp daemon on the
           # -32001 wedge error only, and exits quietly when the server is not installed. Runs the packaged
           # script against stub binaries. See tests/cbm-heal-suite.sh.
