@@ -1,0 +1,53 @@
+{
+  "generated_dirs": ["agents", "commands", "output-styles", "hooks", "plugin-dirs"],
+  "generated_files": ["CLAUDE.md"],
+  "generated_links": ["skills"],
+  "settings": {
+    "file": "settings.json",
+    "note": "Compared only for the keys the render declares; live-only keys are merged state."
+  },
+  "merged_files": ["settings.local.json"],
+  "secret": [
+    ".credentials.json",
+    "daemon-auth-status.json",
+    "daemon-auth-cooldown",
+    "remote-settings.json",
+    "remote-settings.json.signature.json",
+    "remote-settings.json.synced-at",
+    "remote-settings-consent.json",
+    "policy-limits.json",
+    "policy-limits.json.signature.json",
+    "policy-limits.json.stamp.json",
+    "session-env"
+  ],
+  "state": [
+    ".DS_Store",
+    ".git",
+    ".gitignore",
+    ".last-cleanup",
+    "backups",
+    "cache",
+    "chrome",
+    "daemon",
+    "daemon.log",
+    "debug",
+    "external_sessions",
+    "feedback",
+    "file-history",
+    "history.jsonl",
+    "jobs",
+    "paste-cache",
+    "plans",
+    "plugins",
+    "projects",
+    "sessions",
+    "settings.json.bak",
+    "shell-snapshots",
+    "state",
+    "stats-cache.json",
+    "tasks",
+    "telemetry",
+    "usage-data",
+    "worktrees"
+  ]
+}
