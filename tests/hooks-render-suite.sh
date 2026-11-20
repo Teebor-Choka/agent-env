@@ -16,8 +16,14 @@ else
   standalone=1
   cd "$(dirname "$0")/.."
   fix="$PWD/tests/fixtures/hooks"
+  # <nixpkgs> from NIX_PATH when present, else the nixpkgs flake's path.
+  if nix-instantiate --eval -E '<nixpkgs>' >/dev/null 2>&1; then
+    lib='import <nixpkgs/lib>'
+  else
+    lib="import \"$(nix eval --raw nixpkgs#path)/lib\""
+  fi
   out=$(nix eval --impure --json --expr \
-    "import ./tests/hooks-cases.nix { lib = import <nixpkgs/lib>; fix = \"$fix\"; }")
+    "import ./tests/hooks-cases.nix { lib = ($lib); fix = \"$fix\"; }")
 fi
 get() { jq -c "$1" <<<"$out"; }
 
@@ -62,7 +68,7 @@ check "missing id is labelled by position" "$(one 'hook #0: missing id')" "$(get
 check "missing event" "$(one 'hook a: missing event')" "$(get '.errNoEvent')"
 check "missing script" "$(one 'hook a: missing script')" "$(get '.errNoScript')"
 check "duplicate id" "$(one 'duplicate hook id "a"')" "$(get '.errDuplicate')"
-path_err='hook a: script must be a relative path without .., quote, $ or backtick'
+path_err='hook a: script must be a relative path of [A-Za-z0-9._/-] without ..'
 check "script with .." "$(one "$path_err")" "$(get '.errScriptDotDot')"
 check "absolute script" "$(one "$path_err")" "$(get '.errScriptAbsolute')"
 check "script with a quote" "$(one "$path_err")" "$(get '.errScriptQuote')"
@@ -71,12 +77,60 @@ check "manifest without a hooks list" "$(one 'manifest: hooks must be a list')" 
 check "the renderer throws on an invalid manifest" 'true' "$(get '.invalidFails')"
 check "the same hook renders once valid" 'true' "$(get '.validControl')"
 
+check "script with a newline" "$(one "$path_err")" "$(get '.errScriptNewline')"
+check "script with a trailing backslash" "$(one "$path_err")" "$(get '.errScriptBackslash')"
+check "empty script" "$(one "$path_err")" "$(get '.errScriptEmpty')"
+check "script with a space" "$(one "$path_err")" "$(get '.errScriptSpace')"
+check "script with unicode" "$(one "$path_err")" "$(get '.errScriptUnicode')"
+check "script chars: letters, digits, . _ - /" '[]' "$(get '.validScriptChars')"
+
+check "a hook that is not an attrset" "$(one 'hook #0: must be an attribute set')" "$(get '.errHookNotAttrs')"
+check "numeric id" "$(one 'hook #0: id must be a non-empty string')" "$(get '.errIdNum')"
+check "numeric event" "$(one 'hook a: event must be a string')" "$(get '.errEventNum')"
+check "numeric script" "$(one 'hook a: script must be a string')" "$(get '.errScriptNum')"
+check "tools as a string" "$(one 'hook a: tools must be a list of strings')" "$(get '.errToolsString')"
+check "tools with a non-string" "$(one 'hook a: tools must be a list of strings')" "$(get '.errToolsNonString')"
+check "numeric matcher" "$(one 'hook a: matcher must be a string')" "$(get '.errMatcherNum')"
+check "numeric enforce yields one message" "$(one 'hook a: enforce must be block or warn')" "$(get '.errEnforceNum')"
+tmo='hook a: timeout must be a positive integer'
+check "string timeout" "$(one "$tmo")" "$(get '.errTimeoutString')"
+check "zero timeout" "$(one "$tmo")" "$(get '.errTimeoutZero')"
+check "negative timeout" "$(one "$tmo")" "$(get '.errTimeoutNegative')"
+check "float timeout" "$(one "$tmo")" "$(get '.errTimeoutFloat')"
+check "a positive integer timeout is valid" '[]' "$(get '.validTimeout')"
+
+check "a malformed manifest leaves the plugin name usable" '"badjson"' "$(get '.badjsonName')"
+check "a malformed manifest leaves skillNames usable" '["z"]' "$(get '.badjsonSkillNames')"
+check "hooks/hooks.json alone allows a missing skills/" '[]' "$(get '.hookjsonSkillNames')"
+check "a mistyped source (no dir) still errors" 'true' "$(get '.ghostSkillsFail')"
+check "a renamed skills/ with no hooks still errors" 'true' "$(get '.renamedSkillsFail')"
+
+check "the exact message the renderer throws" \
+  '"invalid hook manifest: hook bad-hook: unknown event \"tool.sideways\""' "$(get '.invalidMessage')"
+check "raw matcher Bash and tools [shell] share one group, in manifest order" \
+  '[{"matcher":"Bash","cmds":["\"${CLAUDE_PLUGIN_ROOT}/hooks/a.sh\"","\"${CLAUDE_PLUGIN_ROOT}/hooks/b.sh\""]}]' \
+  "$(get '[.mixedMatcher.hooks.PreToolUse[] | {matcher, cmds: [.hooks[].command]}]')"
+cmp_groups='[.hooks.SessionStart[] | {matcher, ids: [.hooks[].command | capture("hooks/(?<i>[a-z]+)").i]}]'
+check "compact merges with a session.start hook matching compact" \
+  '[{"matcher":"compact","ids":["a","b"]}]' "$(jq -c "$cmp_groups" <<<"$(get .compactMerge)")"
+check "compact merge keeps manifest order when compact is first" \
+  '[{"matcher":"compact","ids":["b","a"]}]' "$(jq -c "$cmp_groups" <<<"$(get .compactMergeReverse)")"
+check "block and warn render identically (enforce is not rendered)" 'true' "$(get '.enforceSame')"
+
 if [ "$standalone" = 1 ]; then
   err=$(nix eval --impure --json --expr "
-    builtins.deepSeq true ((import ./modules/home/agent-plugins-lib.nix { lib = import <nixpkgs/lib>; }).renderClaudeHooks
+    builtins.deepSeq true ((import ./modules/home/agent-plugins-lib.nix { lib = ($lib); }).renderClaudeHooks
       { hooks = [ { id = \"bad-hook\"; event = \"tool.sideways\"; script = \"hooks/x.sh\"; enforce = \"warn\"; } ]; })" 2>&1 >/dev/null || true)
   # -F on the full message: the bare tokens also appear in the echoed --expr source.
   check "the thrown error carries the validation message" '1' \
     "$(grep -cF 'invalid hook manifest: hook bad-hook: unknown event "tool.sideways"' <<<"$err" || true)"
+  # Nix cannot catch a JSON parse error, so the plugin is named through an error context.
+  err=$(nix eval --impure --json --expr "
+    builtins.deepSeq true (builtins.head (builtins.filter (p: p.name == \"badjson\")
+      ((import ./modules/home/agent-plugins-lib.nix { lib = ($lib); }).normalize { src = \"$fix/market\"; })) ).hooks" 2>&1 >/dev/null || true)
+  check "a malformed manifest fails that plugin's hooks" '1' \
+    "$(grep -c 'parse_error' <<<"$err" || true)"
+  check "a malformed manifest error names the plugin" '1' \
+    "$(grep -cF 'plugin badjson: hooks/manifest.json is not valid JSON' <<<"$err" || true)"
 fi
 exit $fail

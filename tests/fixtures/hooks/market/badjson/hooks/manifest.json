@@ -1,0 +1,1 @@
+{"hooks":[{"id":"b","event":"stop","script":"hooks/b","enforce":"warn"},]}
