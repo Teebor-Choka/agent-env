@@ -1106,6 +1106,115 @@
               touch "$out"
             '';
 
+          # Merge of declared settings into a live settings.json (modules/home/claude-settings-merge.sh):
+          # the script suite, plus home.claudeSettings evaluated with stubs for home-manager's options
+          # (this flake has no home-manager input) to check the activation line and the rendered hooks.
+          settings-merge =
+            let
+              evalWith =
+                hooksFromPlugins:
+                lib.evalModules {
+                  specialArgs = {
+                    inherit pkgs;
+                    lib = lib // {
+                      hm.dag.entryAfter = after: data: { inherit after data; };
+                    };
+                  };
+                  modules = [
+                    ./modules/home/claude-settings.nix
+                    {
+                      options.home.activation = lib.mkOption {
+                        type = lib.types.attrsOf lib.types.attrs;
+                        default = { };
+                      };
+                      options.home.homeDirectory = lib.mkOption { type = lib.types.str; };
+                      options.home.agentPlugins.marketplaces = lib.mkOption {
+                        type = lib.types.listOf lib.types.attrs;
+                        default = [ ];
+                      };
+                      config.home.homeDirectory = "/home/t";
+                      config.home.agentPlugins.marketplaces = [
+                        {
+                          src = "${./tests/fixtures/hooks/market}";
+                          # the fixtures that exist to fail validation
+                          exclude = [
+                            "badjson"
+                            "ghost"
+                            "renamed"
+                          ];
+                        }
+                      ];
+                      config.home.claudeSettings = {
+                        enable = true;
+                        inherit hooksFromPlugins;
+                        settings = {
+                          model = "opus";
+                          env.A = "1";
+                        };
+                      };
+                    }
+                  ];
+                };
+              line = e: pkgs.writeText "activation" e.config.home.activation.claudeSettings.data;
+              off = line (evalWith false);
+              on = line (evalWith true);
+              disabled =
+                (lib.evalModules {
+                  specialArgs = {
+                    inherit pkgs;
+                    lib = lib // {
+                      hm.dag.entryAfter = after: data: { inherit after data; };
+                    };
+                  };
+                  modules = [
+                    ./modules/home/claude-settings.nix
+                    {
+                      options.home.activation = lib.mkOption {
+                        type = lib.types.attrsOf lib.types.attrs;
+                        default = { };
+                      };
+                      options.home.homeDirectory = lib.mkOption { type = lib.types.str; };
+                      options.home.agentPlugins.marketplaces = lib.mkOption {
+                        type = lib.types.listOf lib.types.attrs;
+                        default = [ ];
+                      };
+                      config.home.homeDirectory = "/home/t";
+                    }
+                  ];
+                }).config.home.activation;
+            in
+            assert lib.assertMsg (disabled == { }) "settings-merge: a disabled module adds an activation step";
+            pkgs.runCommand "settings-merge"
+              {
+                nativeBuildInputs = [
+                  pkgs.bash
+                  pkgs.jq
+                  pkgs.diffutils
+                  pkgs.coreutils
+                  pkgs.gnugrep
+                  pkgs.gnused
+                ];
+              }
+              ''
+                bash ${./tests/settings-merge-suite.sh} ${./modules/home/claude-settings-merge.sh}
+                fail=0
+                ok() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: expected $2, got $3"; fail=1; fi; }
+                path() { grep -o "/nix/store/[^ ]*$2" "$1" | head -1; }
+                ok "the activation line targets the home settings.json" 1 "$(grep -c ' /home/t/.claude/settings.json$' ${off})"
+                decl=$(path ${off} claude-settings.json)
+                ok "the declared settings reach the merge script" '{"env":{"A":"1"},"model":"opus"}' "$(jq -cS . "$decl")"
+                ok "hooks are not rendered by default" 0 "$(grep -c -e --hooks ${off} || true)"
+                hk=$(path ${on} claude-hooks.json)
+                ok "hooks are passed when asked for" 1 "$(grep -c -e --hooks ${on})"
+                ok "a plugin hook points at its plugin-dirs link" \
+                  '"\"$HOME/.claude/plugin-dirs/gated/hooks/gate.sh\""' "$(jq -c '.PreToolUse[0].hooks[0].command' "$hk")"
+                ok "no CLAUDE_PLUGIN_ROOT is left in settings hooks" 0 "$(grep -c CLAUDE_PLUGIN_ROOT "$hk" || true)"
+                ok "matchers and timeouts carry through" '"startup|resume" 10' \
+                  "$(jq -r '.SessionStart[0] | "\"\(.matcher)\" \(.hooks[0].timeout)"' "$hk")"
+                [ "$fail" = 0 ]
+                touch "$out"
+              '';
+
           # The cbm-heal watchdog (agentic.codebaseMemory): restarts the codebase-memory-mcp daemon on the
           # -32001 wedge error only, and exits quietly when the server is not installed. Runs the packaged
           # script against stub binaries. See tests/cbm-heal-suite.sh.
