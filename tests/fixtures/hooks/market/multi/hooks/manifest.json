@@ -1,0 +1,12 @@
+{
+  "hooks": [
+    { "id": "edit-guard", "event": "tool.before", "tools": ["file.edit"], "script": "hooks/edit-guard", "enforce": "block" },
+    { "id": "read-nudge", "event": "tool.before", "tools": ["file.read"], "script": "hooks/read-nudge", "enforce": "warn" },
+    { "id": "spawn-guard", "event": "tool.before", "tools": ["agent.spawn"], "script": "hooks/spawn-guard", "enforce": "block" },
+    { "id": "ask-guard", "event": "tool.before", "tools": ["ask.user"], "script": "hooks/ask-guard", "enforce": "block" },
+    { "id": "boot", "event": "session.start", "matcher": "startup|resume", "script": "hooks/boot", "enforce": "warn" },
+    { "id": "after", "event": "tool.after", "tools": ["shell"], "script": "hooks/after", "enforce": "warn" },
+    { "id": "done", "event": "stop", "script": "hooks/done", "enforce": "warn" },
+    { "id": "sub", "event": "subagent.start", "script": "hooks/sub", "enforce": "warn" }
+  ]
+}

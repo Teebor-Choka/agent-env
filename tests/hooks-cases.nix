@@ -2,21 +2,9 @@
 # standalone run of tests/hooks-render-suite.sh and the flake check, so both evaluate the same thing.
 { lib, fix }:
 let
-  l = import ../modules/home/agent-plugins-lib.nix { inherit lib; };
-  byName = builtins.listToAttrs (
-    map (p: {
-      name = p.name;
-      value = p;
-    }) (l.normalize { src = "${fix}/market"; })
-  );
-  h =
-    id: event: extra:
-    {
-      inherit id event;
-      script = "hooks/${id}.sh";
-      enforce = "warn";
-    }
-    // extra;
+  shared = import ./lib.nix { inherit lib fix; };
+  l = shared.plugins;
+  inherit (shared) byName h;
   render = hooks: l.renderClaudeHooks { inherit hooks; };
   errs = hooks: l.validateHooks { inherit hooks; };
   fails' = v: !(builtins.tryEval (builtins.deepSeq v true)).success;
@@ -57,8 +45,10 @@ in
       "ask.user"
       "message.send"
       "wake.schedule"
+      "file.search"
     ]
   );
+  rawToolMatcher = render [ (h "a" "tool.before" { matcher = "Grep|Glob"; }) ];
   endAfter = render [
     (h "e" "session.end" { })
     (h "t" "tool.after" { tools = [ "shell" ]; })
