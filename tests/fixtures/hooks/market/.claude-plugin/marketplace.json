@@ -38,6 +38,11 @@
       "name": "renamed",
       "description": "Has a skill dir but no skills/ and no hooks",
       "source": "./renamed"
+    },
+    {
+      "name": "multi",
+      "description": "Hooks across tool aliases and events",
+      "source": "./multi"
     }
   ]
 }

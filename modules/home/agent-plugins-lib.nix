@@ -47,6 +47,11 @@ let
     "ask.user"
     "message.send"
     "wake.schedule"
+    "file.search"
+  ];
+  toolEvents = [
+    "tool.before"
+    "tool.after"
   ];
 
   # Error strings for a parsed `hooks/manifest.json`, [ ] when valid; it never throws, whatever the
@@ -59,10 +64,6 @@ let
     manifest:
     let
       hooks = manifest.hooks or null;
-      toolEvents = [
-        "tool.before"
-        "tool.after"
-      ];
       badScript =
         s:
         builtins.match "[A-Za-z0-9._/-]+" s == null
@@ -124,9 +125,111 @@ let
       )
       ++ map (id: "duplicate hook id \"${id}\"") dups;
   invalidManifestMessage = errors: "invalid hook manifest: ${lib.concatStringsSep "; " errors}";
+  # Claude Code's names for the neutral events and tool aliases (the other harnesses: agent-hooks-lib.nix).
+  claudeTables = {
+    events = {
+      "session.start".event = "SessionStart";
+      "session.end".event = "SessionEnd";
+      "prompt.submit".event = "UserPromptSubmit";
+      "tool.before".event = "PreToolUse";
+      "tool.after".event = "PostToolUse";
+      "subagent.start".event = "SubagentStart";
+      "stop".event = "Stop";
+      "compact" = {
+        event = "SessionStart";
+        matcher = "compact";
+      };
+    };
+    tools = {
+      "shell" = "Bash";
+      "file.read" = "Read";
+      "file.edit" = "Edit|Write|MultiEdit|NotebookEdit";
+      "agent.spawn" = "Agent";
+      "ask.user" = "AskUserQuestion";
+      "message.send" = "SendMessage";
+      "wake.schedule" = "ScheduleWakeup|CronCreate"; # both timers
+      "file.search" = "Grep|Glob";
+    };
+  };
+
+  # A hook's tool aliases as one harness's matcher strings: null when the hook lists no tools, else the
+  # aliases the harness has (null entries dropped), in listed order.
+  mappedTools =
+    tools: h: if h ? tools then lib.filter (x: x != null) (map (t: tools.${t}) h.tools) else null;
+
+  # Render a validated manifest as a harness's JSON hooks map (Claude and Codex share the shape).
+  # `events.<neutral>` is { event, matcher? } or null (the harness has no such event); `tools.<alias>` is
+  # a matcher string or null (no such tool). A hook whose event is null, or whose tools are all null, is
+  # skipped here and shows as n/a in the coverage matrix. Hooks sharing an event and matcher join one
+  # group, in manifest order. `rawToolMatcher = false`: a raw `matcher` on a tool event is Claude's own
+  # vocabulary, so a harness that sets it false skips such a hook (n/a) instead of sending it verbatim.
+  renderGrouped =
+    {
+      manifest,
+      events,
+      tools,
+      rootVar,
+      rawToolMatcher ? true,
+    }:
+    let
+      errors = validateHooks manifest;
+      resolve =
+        h:
+        let
+          ev = events.${h.event};
+          mapped = mappedTools tools h;
+        in
+        if
+          ev == null
+          || (mapped != null && mapped == [ ])
+          || (!rawToolMatcher && h ? matcher && builtins.elem h.event toolEvents)
+        then
+          null
+        else
+          {
+            inherit (ev) event;
+            matcher =
+              if mapped != null then lib.concatStringsSep "|" mapped else h.matcher or ev.matcher or null;
+            entry = {
+              type = "command";
+              command = "\"\${${rootVar}}/${h.script}\"";
+            }
+            // lib.optionalAttrs ((h.timeout or null) != null) { inherit (h) timeout; };
+          };
+      add =
+        acc: r:
+        let
+          groups = acc.${r.event} or [ ];
+          i = lib.lists.findFirstIndex (g: (g.matcher or null) == r.matcher) null groups;
+        in
+        acc
+        // {
+          ${r.event} =
+            if i == null then
+              groups
+              ++ [
+                (lib.optionalAttrs (r.matcher != null) { inherit (r) matcher; } // { hooks = [ r.entry ]; })
+              ]
+            else
+              lib.imap0 (j: g: if j == i then g // { hooks = g.hooks ++ [ r.entry ]; } else g) groups;
+        };
+    in
+    if errors != [ ] then
+      throw (invalidManifestMessage errors)
+    else
+      {
+        hooks = builtins.foldl' add { } (lib.filter (r: r != null) (map resolve manifest.hooks));
+      };
 in
 {
-  inherit validateHooks invalidManifestMessage;
+  inherit
+    validateHooks
+    invalidManifestMessage
+    renderGrouped
+    claudeTables
+    mappedTools
+    toolEvents
+    ;
 
   # The marketplace Codex and omp read: `.claude-plugin/marketplace.json` over one dir-mode entry per
   # plugin closure (Codex requires every local source inside the marketplace root).
@@ -161,78 +264,16 @@ in
       enabled = true
     '') names;
 
-  # A plugin's neutral `hooks/manifest.json` -> Claude Code's `hooks.json`. Hooks sharing an event and
-  # matcher join one group, in manifest order. The script path is quoted: `claude plugin validate`
-  # warns on a bare ${CLAUDE_PLUGIN_ROOT}. `compact` is SessionStart:compact (context after a
-  # compaction), not PreCompact. Callers pass a parsed manifest, never null (a plugin without one).
+  # A plugin's neutral `hooks/manifest.json` -> Claude Code's `hooks.json`. The script path is quoted:
+  # `claude plugin validate` warns on a bare ${CLAUDE_PLUGIN_ROOT}. `compact` is SessionStart:compact
+  # (context after a compaction), not PreCompact. Callers pass a parsed manifest, never null.
   renderClaudeHooks =
     manifest:
-    let
-      errors = validateHooks manifest;
-      events = {
-        "session.start".event = "SessionStart";
-        "session.end".event = "SessionEnd";
-        "prompt.submit".event = "UserPromptSubmit";
-        "tool.before".event = "PreToolUse";
-        "tool.after".event = "PostToolUse";
-        "subagent.start".event = "SubagentStart";
-        "stop".event = "Stop";
-        "compact" = {
-          event = "SessionStart";
-          matcher = "compact";
-        };
-      };
-      tools = {
-        "shell" = "Bash";
-        "file.read" = "Read";
-        "file.edit" = "Edit|Write|MultiEdit";
-        "agent.spawn" = "Agent";
-        "ask.user" = "AskUserQuestion";
-        "message.send" = "SendMessage";
-        "wake.schedule" = "ScheduleWakeup";
-      };
-      resolve =
-        h:
-        let
-          ev = events.${h.event};
-        in
-        {
-          inherit (ev) event;
-          matcher =
-            if h ? tools then
-              lib.concatStringsSep "|" (map (t: tools.${t}) h.tools)
-            else
-              h.matcher or ev.matcher or null;
-          entry = {
-            type = "command";
-            command = "\"\${CLAUDE_PLUGIN_ROOT}/${h.script}\"";
-          }
-          // lib.optionalAttrs ((h.timeout or null) != null) { inherit (h) timeout; };
-        };
-      add =
-        acc: r:
-        let
-          groups = acc.${r.event} or [ ];
-          i = lib.lists.findFirstIndex (g: (g.matcher or null) == r.matcher) null groups;
-        in
-        acc
-        // {
-          ${r.event} =
-            if i == null then
-              groups
-              ++ [
-                (lib.optionalAttrs (r.matcher != null) { inherit (r) matcher; } // { hooks = [ r.entry ]; })
-              ]
-            else
-              lib.imap0 (j: g: if j == i then g // { hooks = g.hooks ++ [ r.entry ]; } else g) groups;
-        };
-    in
-    if errors != [ ] then
-      throw (invalidManifestMessage errors)
-    else
-      {
-        hooks = builtins.foldl' add { } (map resolve manifest.hooks);
-      };
+    renderGrouped {
+      inherit manifest;
+      rootVar = "CLAUDE_PLUGIN_ROOT";
+      inherit (claudeTables) events tools;
+    };
 
   normalize =
     {

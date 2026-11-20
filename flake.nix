@@ -1039,6 +1039,72 @@
                 bash ${./tests/config-compare-suite.sh} ${./modules/home/claude-config-compare.sh} ${./modules/home/claude-config-classes.json} ${./tests/fixtures/config-compare}
                 touch "$out"
               '';
+          # Per-harness hook tables, the Codex renderer and the hook x harness coverage matrix
+          # (agent-hooks-lib.nix). Cases are evaluated here, compared by the suite's jq checks.
+          hooks-harness =
+            let
+              fix = "${./tests/fixtures/hooks}";
+              cases = pkgs.writeText "harness-cases.json" (
+                builtins.toJSON (import ./tests/harness-cases.nix { inherit lib fix; })
+              );
+            in
+            pkgs.runCommand "hooks-harness"
+              {
+                nativeBuildInputs = [
+                  pkgs.bash
+                  pkgs.jq
+                ];
+              }
+              ''
+                bash ${./tests/harness-suite.sh} ${cases} ${fix}
+                touch "$out"
+              '';
+
+          # The neutral hook runtime and the oh-my-pi and Pi shims (modules/hooks-runtime): real sh hook
+          # scripts against a fake host. See tests/shims-suite.mjs.
+          hooks-shims =
+            let
+              hooksPlugins = import ./modules/home/agent-plugins-lib.nix { inherit lib; };
+              hooksLib = import ./modules/home/agent-hooks-lib.nix {
+                inherit lib;
+                plugins = hooksPlugins;
+              };
+              # Only the suite and the runtime it imports, not the whole repo.
+              shimsSrc = lib.fileset.toSource {
+                root = ./.;
+                fileset = lib.fileset.unions [
+                  ./tests/shims-suite.mjs
+                  ./modules/hooks-runtime
+                ];
+              };
+              # A plugin root with one executable gate; the suite imports the generated omp shim for it.
+              shimRoot = pkgs.runCommand "shim-root" { } ''
+                mkdir -p $out/hooks
+                printf '#!/bin/sh\necho "from the generated shim" >&2\nexit 2\n' > $out/hooks/deny
+                chmod +x $out/hooks/deny
+              '';
+              shimFile = pkgs.writeText "shim.mjs" (
+                hooksLib.renderShim {
+                  harness = "omp";
+                  manifest.hooks = [
+                    {
+                      id = "g";
+                      event = "tool.before";
+                      tools = [ "file.edit" ];
+                      script = "hooks/deny";
+                      enforce = "block";
+                    }
+                  ];
+                  root = "${shimRoot}";
+                  runtime = "${./modules/hooks-runtime}";
+                }
+              );
+            in
+            pkgs.runCommand "hooks-shims" { nativeBuildInputs = [ pkgs.nodejs ]; } ''
+              export HOME=$TMPDIR
+              node ${shimsSrc}/tests/shims-suite.mjs ${shimFile}
+              touch "$out"
+            '';
 
           # The cbm-heal watchdog (agentic.codebaseMemory): restarts the codebase-memory-mcp daemon on the
           # -32001 wedge error only, and exits quietly when the server is not installed. Runs the packaged

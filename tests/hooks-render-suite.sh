@@ -33,7 +33,7 @@ check "a plugin without hooks/manifest.json has no hooks" 'null' "$(get '.plainH
 check "a hooks-only plugin (no skills/ dir) normalizes" 'true' "$(get '.bareNormalizes')"
 check "a hooks-only plugin has no skills" '[]' "$(get '.bareSkillNames')"
 check "no hooks renders an empty event map" '{"hooks":{}}' "$(get '.empty')"
-check "tool aliases join into one matcher, in listed order" '"Edit|Write|MultiEdit|Bash"' \
+check "tool aliases join into one matcher, in listed order" '"Edit|Write|MultiEdit|NotebookEdit|Bash"' \
   "$(get '.multiTool.hooks.PreToolUse[0].matcher')"
 check "same event and matcher share one group, in manifest order" \
   '[{"matcher":"Bash","n":2},{"matcher":"Read","n":1}]' \
@@ -48,8 +48,9 @@ check "compact is SessionStart with matcher compact" '"compact"' \
 check "subagent.start is SubagentStart" 'true' "$(get '.subagent.hooks | has("SubagentStart")')"
 check "timeout carries through on stop" '5' "$(get '.stop.hooks.Stop[0].hooks[0].timeout')"
 check "every neutral tool alias maps to its Claude tool" \
-  '["Bash","Read","Edit|Write|MultiEdit","Agent","AskUserQuestion","SendMessage","ScheduleWakeup"]' \
+  '["Bash","Read","Edit|Write|MultiEdit|NotebookEdit","Agent","AskUserQuestion","SendMessage","ScheduleWakeup|CronCreate","Grep|Glob"]' \
   "$(get '[.aliases.hooks.PreToolUse[].matcher]')"
+check "a raw matcher on a tool event is Claude vocabulary: Claude renders it" '"Grep|Glob"' "$(get '.rawToolMatcher.hooks.PreToolUse[0].matcher')"
 check "session.end and tool.after map to SessionEnd and PostToolUse" \
   '["PostToolUse","SessionEnd"]' "$(get '.endAfter.hooks | keys')"
 
