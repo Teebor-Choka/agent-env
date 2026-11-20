@@ -74,7 +74,7 @@ rendered_hooks() { # JSON {plugin: hooks.json} for the roots under test
 @test "fixture: the union orders groups hooky then styled and keeps both Bash groups" {
   fixture_only
   render_roots "$BATS_TEST_TMPDIR/out"
-  [ "$(jq -c '[.hooks.PreToolUse[] | [.matcher, (.hooks | length)]]' "$BATS_TEST_TMPDIR/out/settings.json")" = '[["Bash",1],["Edit|Write|MultiEdit",1],["Bash",1]]' ]
+  [ "$(jq -c '[.hooks.PreToolUse[] | [.matcher, (.hooks | length)]]' "$BATS_TEST_TMPDIR/out/settings.json")" = '[["Bash",1],["Edit|Write|MultiEdit|NotebookEdit",1],["Bash",1]]' ]
   [ "$(jq -c '.hooks | keys_unsorted' "$BATS_TEST_TMPDIR/out/settings.json")" = '["PreToolUse","SessionStart"]' ]
   jq -e '.hooks.PreToolUse[2].hooks[0].command | endswith("hooks/lint.sh\"")' "$BATS_TEST_TMPDIR/out/settings.json" >/dev/null
 }
