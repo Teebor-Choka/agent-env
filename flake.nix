@@ -1215,6 +1215,60 @@
                 touch "$out"
               '';
 
+          # End-to-end smoke test of the plugin render (tests/e2e/render.sh) over a fixture marketplace
+          # (tests/fixtures/e2e): copies, the agents/commands/output-styles union with its collision error,
+          # the hooks.json union, secret and symlink checks, `claude plugin validate` (skipped without a
+          # claude binary: the package is unfree) and the compare against an expected tree. The hook
+          # manifests are rendered here (the sandbox has no nix); the suite compares them with jq.
+          e2e-render =
+            let
+              src = lib.fileset.toSource {
+                root = ./.;
+                fileset = lib.fileset.unions [
+                  ./tests/e2e
+                  ./tests/fixtures/e2e
+                  ./modules/home/claude-config-compare.sh
+                  ./modules/home/claude-config-classes.json
+                ];
+              };
+              l = import ./modules/home/agent-plugins-lib.nix { inherit lib; };
+              hooksRendered = pkgs.writeText "e2e-hooks-rendered.json" (
+                builtins.toJSON (
+                  lib.genAttrs [ "hooky" "styled" ] (
+                    n:
+                    l.renderClaudeHooks (
+                      builtins.fromJSON (builtins.readFile ./tests/fixtures/e2e/plugins/${n}/hooks/manifest.json)
+                    )
+                  )
+                )
+              );
+              claude =
+                if pkgs ? claude-code && (builtins.tryEval pkgs.claude-code.drvPath).success then
+                  pkgs.claude-code
+                else
+                  null;
+            in
+            pkgs.runCommand "e2e-render"
+              {
+                nativeBuildInputs = [
+                  pkgs.bats
+                  pkgs.bash
+                  pkgs.jq
+                  pkgs.diffutils
+                  pkgs.findutils
+                  pkgs.coreutils
+                  pkgs.gnugrep
+                  pkgs.gnused
+                ];
+                E2E_REPO = "${src}";
+                E2E_HOOKS_RENDERED = hooksRendered;
+                E2E_CLAUDE = if claude == null then "" else "${claude}/bin/claude";
+              }
+              ''
+                bats ${src}/tests/e2e
+                touch "$out"
+              '';
+
           # The cbm-heal watchdog (agentic.codebaseMemory): restarts the codebase-memory-mcp daemon on the
           # -32001 wedge error only, and exits quietly when the server is not installed. Runs the packaged
           # script against stub binaries. See tests/cbm-heal-suite.sh.

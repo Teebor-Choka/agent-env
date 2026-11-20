@@ -1,0 +1,5 @@
+{
+  "name": "hooky",
+  "version": "0.1.0",
+  "description": "Fixture: hooks only, with a neutral manifest and the rendered hooks.json."
+}

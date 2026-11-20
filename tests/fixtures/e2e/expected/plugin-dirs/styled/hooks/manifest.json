@@ -1,0 +1,5 @@
+{
+  "hooks": [
+    {"id": "lint", "event": "tool.before", "tools": ["shell"], "script": "hooks/lint.sh", "enforce": "warn"}
+  ]
+}
