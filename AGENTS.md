@@ -17,7 +17,8 @@ built the way it is.
 | `modules/shared.nix` | Proxy flags and MCP wrapper shared by `agentic.nix` and `sandbox.nix` |
 | `modules/cbm-heal.sh`, `modules/cbm-heal.nix` | The codebase-memory-mcp wedge watchdog (`agentic.codebaseMemory`): the script, and its packaging with bash and python3 pinned to the store |
 | `tests/sandbox-boot.sh` | Live boot test, `nix run .#test-sandbox` (needs sandy; never run in CI) |
-| `modules/home/` | home-manager modules: `home.agentPlugins`, `home.skillLink`, `home.swePlugin` |
+| `modules/home/` | home-manager modules: `home.agentPlugins`, `home.skillLink`, `home.swePlugin`, `home.contextMode` |
+| `modules/context-mode.nix` | The context-mode Claude Code plugin from its pinned release tarball, with `node` rewritten to the store path (`home.contextMode`; ELv2, so a consumer needs `allowUnfree` or a predicate for `context-mode-plugin`). Bump `version` and `hash` together |
 | `tests/` | `agent-plugins-suite.sh` and its fixtures, run as `checks.<system>.agent-plugins-lib` |
 | `tests/hooks-render-suite.sh`, `tests/hooks-cases.nix` | The neutral hook manifest (`hooks/manifest.json`): `validateHooks` and `renderClaudeHooks` in `agent-plugins-lib.nix`, run as `checks.<system>.hooks-render` |
 | `modules/home/claude-config-compare.sh`, `claude-config-classes.json`, `tests/config-compare-suite.sh` | Compare a rendered Claude config dir with the live `~/.claude` by class (generated, merged, secret, state); run as `checks.<system>.config-compare` |
@@ -25,6 +26,7 @@ built the way it is.
 | `modules/hooks-runtime/`, `tests/shims-suite.mjs` | The neutral hook runtime (`hook-core.mjs`) and the oh-my-pi and Pi tool.before shims (`adapters.mjs`); run as `checks.<system>.hooks-shims` |
 | `modules/home/claude-settings.nix`, `claude-settings-merge.sh`, `tests/settings-merge-suite.sh` | `home.claudeSettings` (opt-in): merge declared top-level keys over the live `~/.claude/settings.json` (a real file; undeclared keys survive, `hooks` merge by event, a corrupt file moves to `.bak-<n>`, secret names are refused as targets); `hooksFromPlugins` renders plugin hooks into it (off: `--plugin-dir` plugins already fire their own); run as `checks.<system>.settings-merge` |
 | `tests/e2e/render.sh`, `tests/e2e/render.bats`, `tests/fixtures/e2e/` | Render plugin roots into a scratch Claude config (`plugin-dirs` copies, `agents`/`commands`/`output-styles` union, `settings.json` hooks union) and the smoke test over a fixture marketplace; run as `checks.<system>.e2e-render`, or `E2E_PLUGIN_ROOTS=a:b bats tests/e2e` for real roots |
+| `tests/context-mode-suite.sh` | The packaged plugin: store node in every command, the real hook and MCP server run (`checks.<system>.context-mode`) |
 | `tests/cbm-heal-suite.sh` | The watchdog against stub binaries, run as `checks.<system>.cbm-heal` |
 | `tests/t3-link-vm.sh`, `tests/t3-unlink-vm.sh`, `tests/t3-connect-host-vm.nix` | the `t3-link-vm` and `t3-unlink-vm` suites (`checks.<system>.t3-link-vm`) and the two-VM proof of the host rules (`packages.x86_64-linux.t3-connect-host-test`, needs KVM, never in CI) |
 | `pyproject.toml` | Pins the package version (the only "dependency" this project has) |

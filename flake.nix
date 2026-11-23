@@ -1285,12 +1285,25 @@
           # hook and MCP server run. See tests/context-mode-suite.sh.
           context-mode =
             let
-              plugin = import ./modules/context-mode.nix { inherit pkgs; };
+              # ELv2 is an unfree license in nixpkgs: allow this one package, nothing else.
+              unfreePkgs = import nixpkgs {
+                inherit system;
+                config.allowUnfreePredicate = p: lib.getName p == "context-mode-plugin";
+              };
+              plugin = import ./modules/context-mode.nix { pkgs = unfreePkgs; };
             in
-            pkgs.runCommand "context-mode" { nativeBuildInputs = [ pkgs.bash pkgs.jq pkgs.coreutils ]; } ''
-              bash ${./tests/context-mode-suite.sh} ${plugin} ${pkgs.nodejs_24}/bin/node
-              touch "$out"
-            '';
+            pkgs.runCommand "context-mode"
+              {
+                nativeBuildInputs = [
+                  pkgs.bash
+                  pkgs.jq
+                  pkgs.coreutils
+                ];
+              }
+              ''
+                bash ${./tests/context-mode-suite.sh} ${plugin} ${pkgs.nodejs_24}/bin/node
+                touch "$out"
+              '';
         }
       );
 
