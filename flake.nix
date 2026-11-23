@@ -1280,6 +1280,30 @@
               bash ${./tests/cbm-heal-suite.sh} ${cbmHeal}/bin/cbm-heal
               touch "$out"
             '';
+
+          # The packaged context-mode plugin (home.contextMode): store node in every command, the real
+          # hook and MCP server run. See tests/context-mode-suite.sh.
+          context-mode =
+            let
+              # ELv2 is an unfree license in nixpkgs: allow this one package, nothing else.
+              unfreePkgs = import nixpkgs {
+                inherit system;
+                config.allowUnfreePredicate = p: lib.getName p == "context-mode-plugin";
+              };
+              plugin = import ./modules/context-mode.nix { pkgs = unfreePkgs; };
+            in
+            pkgs.runCommand "context-mode"
+              {
+                nativeBuildInputs = [
+                  pkgs.bash
+                  pkgs.jq
+                  pkgs.coreutils
+                ];
+              }
+              ''
+                bash ${./tests/context-mode-suite.sh} ${plugin} ${pkgs.nodejs_24}/bin/node
+                touch "$out"
+              '';
         }
       );
 
