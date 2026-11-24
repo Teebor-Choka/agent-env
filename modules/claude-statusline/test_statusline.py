@@ -47,41 +47,16 @@ class Statusline(unittest.TestCase):
         return {"session_id": session, "cost": {"total_cost_usd": cost},
                 "context_window": {"total_input_tokens": tokens, "used_percentage": pct}}
 
-    def test_shows_cost_context_and_today(self):
-        self.write_ledger([{"session_id": "o1", "ts_last": ts(), "cost_usd": 40.0},
-                           {"session_id": "o2", "ts_last": ts(), "cost_usd": 2.0}])
+    def test_shows_cost_and_context(self):
         out = self.plain(self.payload())
         self.assertIn("$12.34", out)
         self.assertIn("450K", out)
-        self.assertIn("today $54.34", out)
-
-    def test_other_days_are_not_in_todays_total(self):
-        self.write_ledger([{"session_id": "o1", "ts_last": ts(3), "cost_usd": 99.0}])
-        self.assertIn("today $12.34", self.plain(self.payload()))
-
-    def test_live_cost_replaces_the_stale_ledger_row_of_the_same_session(self):
-        self.write_ledger([{"session_id": "cur", "ts_last": ts(), "cost_usd": 10.0}])
-        self.assertIn("today $12.34", self.plain(self.payload()))
-
-    def test_missing_ledger_prints_cost_and_context_only(self):
-        out = self.plain(self.payload())
-        self.assertIn("$12.34", out)
         self.assertNotIn("Traceback", out)
 
-    def test_empty_ledger(self):
-        self.write_ledger([])
-        out = self.plain(self.payload())
-        self.assertIn("$12.34", out)
-
-    def test_garbage_ledger_lines_are_skipped(self):
-        self.write_ledger(["garbage", "{", json.dumps({"session_id": "o", "ts_last": ts(), "cost_usd": "x"}),
-                           {"session_id": "o2", "ts_last": ts(), "cost_usd": 1.0}])
-        self.assertIn("today $13.34", self.plain(self.payload()))
-
-    def test_duplicate_ledger_session_counts_once_last_wins(self):
-        self.write_ledger([{"session_id": "o", "ts_last": ts(), "cost_usd": 1.0},
-                           {"session_id": "o", "ts_last": ts(), "cost_usd": 5.0}])
-        self.assertIn("today $17.34", self.plain(self.payload()))
+    def test_never_prints_a_today_total_even_when_a_ledger_exists(self):
+        # ledger-stop is gone: nothing writes the ledger, so the line must not depend on one
+        self.write_ledger([{"session_id": "o1", "ts_last": ts(), "cost_usd": 40.0}])
+        self.assertNotIn("today", self.plain(self.payload()))
 
     def write_headroom(self, tokens_saved, percent=None):
         os.makedirs(os.path.join(self.home.name, ".headroom"), exist_ok=True)
