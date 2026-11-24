@@ -8,5 +8,6 @@
     ./context-mode.nix # opt-in: home.contextMode: deliver the context-mode plugin to Claude Code
     ./agent-plugins.nix # opt-in: home.agentPlugins: deliver marketplace plugins to every harness
     ./claude-settings.nix # opt-in: home.claudeSettings: merge declared keys into ~/.claude/settings.json
+    ./claude-statusline.nix # opt-in: home.claudeStatusline: declare the Claude Code statusLine
   ];
 }

@@ -17,8 +17,9 @@ built the way it is.
 | `modules/shared.nix` | Proxy flags and MCP wrapper shared by `agentic.nix` and `sandbox.nix` |
 | `modules/cbm-heal.sh`, `modules/cbm-heal.nix` | The codebase-memory-mcp wedge watchdog (`agentic.codebaseMemory`): the script, and its packaging with bash and python3 pinned to the store |
 | `tests/sandbox-boot.sh` | Live boot test, `nix run .#test-sandbox` (needs sandy; never run in CI) |
-| `modules/home/` | home-manager modules: `home.agentPlugins`, `home.skillLink`, `home.swePlugin`, `home.contextMode` |
+| `modules/home/` | home-manager modules: `home.agentPlugins`, `home.skillLink`, `home.swePlugin`, `home.contextMode`, `home.claudeStatusline` |
 | `modules/context-mode.nix` | The context-mode Claude Code plugin from its pinned release tarball, with `node` rewritten to the store path (`home.contextMode`; ELv2, so a consumer needs `allowUnfree` or a predicate for `context-mode-plugin`). Bump `version` and `hash` together |
+| `modules/claude-statusline.nix`, `modules/claude-statusline/` | The Claude Code statusLine script (cost, ctx size, `cm`, `hr total`) and its tests, packaged with a pinned python3 (`home.claudeStatusline`; `checks.<system>.claude-statusline`) |
 | `tests/` | `agent-plugins-suite.sh` and its fixtures, run as `checks.<system>.agent-plugins-lib` |
 | `tests/hooks-render-suite.sh`, `tests/hooks-cases.nix` | The neutral hook manifest (`hooks/manifest.json`): `validateHooks` and `renderClaudeHooks` in `agent-plugins-lib.nix`, run as `checks.<system>.hooks-render` |
 | `modules/home/claude-config-compare.sh`, `claude-config-classes.json`, `tests/config-compare-suite.sh` | Compare a rendered Claude config dir with the live `~/.claude` by class (generated, merged, secret, state); run as `checks.<system>.config-compare` |

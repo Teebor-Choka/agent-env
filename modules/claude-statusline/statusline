@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+"""Claude Code statusLine command: `$cost | ctx <tokens> (P%) | cm -<K> | hr total -<K> (<pct>%)`, one line, no network.
+
+Reads the statusline JSON on stdin (cost.total_cost_usd, context_window.total_input_tokens and
+used_percentage, session_id: https://code.claude.com/docs/en/statusline). The line turns red at $150
+session cost or 80% context. Bad stdin prints nothing harmful. Always exits 0.
+`hr total` (cyan) is headroom's tokens saved since its proxy started, with its savings_percent in
+parentheses (~/.headroom/proxy_savings.json, display_session; the whole proxy, not one Claude session). `cm` (magenta) is context-mode's saving for
+this session in tokens (bytes / 4: sandbox_bytes - returned_bytes of its ctx_* calls, summed over
+~/.context-mode/projects/*/context.db). Each is omitted when zero, missing or unreadable; a red line
+stays one colour.
+Tests: test_statusline.py beside this file.
+"""
+import json
+import glob
+import os
+import sqlite3
+import sys
+
+RED_COST = 150.0
+RED_PCT = 80.0
+
+
+def number(value):
+    return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+
+def kilo(tokens):
+    return f"{tokens / 1000:.0f}K" if tokens >= 1000 else str(int(tokens))
+
+
+def headroom_saved(home):
+    """(tokens saved, savings percent or None) of headroom's current proxy run."""
+    try:
+        with open(os.path.join(home, ".headroom", "proxy_savings.json")) as f:
+            d = json.load(f)["display_session"]
+        return number(d["tokens_saved"]) or 0.0, number(d.get("savings_percent"))
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return 0.0, None
+
+
+def context_mode_saved(home, session):
+    """Tokens (bytes / 4) kept out of context by this session's ctx_* calls, over every project DB.
+    None when the plugin recorded nothing for the session (not installed, or not yet active)."""
+    if not isinstance(session, str):
+        return None
+    total = 0
+    seen = False
+    for path in glob.glob(os.path.join(home, ".context-mode", "projects", "*", "context.db")):
+        try:
+            db = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=0.2)
+            try:
+                row = db.execute(
+                    "SELECT COALESCE(SUM(CASE WHEN tool IS NOT NULL AND kind <> 'cost' AND tool <> 'ctx_stats' "
+                    "THEN sandbox_bytes - returned_bytes ELSE 0 END), 0), COUNT(*) FROM events "
+                    "WHERE session_id = ?", (session,)).fetchone()
+            finally:
+                db.close()
+            total += row[0] or 0
+            seen = seen or bool(row[1])
+        except (sqlite3.Error, OSError, TypeError):
+            continue
+    return total / 4 if seen else None
+
+
+def main():
+    try:
+        data = json.load(sys.stdin)
+        if not isinstance(data, dict):
+            data = {}
+    except ValueError:
+        data = {}
+    cost_obj = data.get("cost") if isinstance(data.get("cost"), dict) else {}
+    ctx_obj = data.get("context_window") if isinstance(data.get("context_window"), dict) else {}
+    cost = number(cost_obj.get("total_cost_usd"))
+    tokens = number(ctx_obj.get("total_input_tokens"))
+    pct = number(ctx_obj.get("used_percentage"))
+    session = data.get("session_id")
+
+    red = (cost is not None and cost >= RED_COST) or (pct is not None and pct >= RED_PCT)
+    home = os.path.expanduser("~")
+
+    def paint(text, code):
+        return text if red else f"\x1b[{code}m{text}\x1b[0m"
+
+    parts = []
+    if cost is not None:
+        parts.append(f"${cost:.2f}")
+    if tokens is not None:
+        parts.append(f"ctx {kilo(tokens)}" + (f" ({pct:.0f}%)" if pct is not None else ""))
+    hr_saved, hr_pct = headroom_saved(home)
+    for label, code, saved in (("cm", "35", context_mode_saved(home, session)), ("hr total", "36", hr_saved)):
+        if saved is not None and (saved >= 500 or label == "cm"):
+            pct = f" ({hr_pct:.1f}%)" if label == "hr total" and hr_pct is not None else ""
+            amount = kilo(saved) if saved >= 1000 else f"{saved / 1000:.0f}K"
+            parts.append(paint(f"{label} -{amount}{pct}", code))
+    if not parts:
+        return
+    line = " | ".join(parts)
+    if red:
+        line = f"\x1b[31m{line}\x1b[0m"
+    print(line)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception:
+        pass
