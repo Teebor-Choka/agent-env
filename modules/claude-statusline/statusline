@@ -1,20 +1,16 @@
 #!/usr/bin/env python3
-"""Claude Code statusLine command: `$cost | ctx <tokens> | cm -<K> | hr total -<K> (<pct>%) | today $total`, one line, no network.
+"""Claude Code statusLine command: `$cost | ctx <tokens> (P%) | cm -<K> | hr total -<K> (<pct>%)`, one line, no network.
 
 Reads the statusline JSON on stdin (cost.total_cost_usd, context_window.total_input_tokens and
-used_percentage, session_id: https://code.claude.com/docs/en/statusline) and ~/.claude/metrics/ledger.jsonl
-(written by hooks/ledger-stop). Today's total is the sum of cost_usd over ledger sessions whose ts_last is
-today (local date), last row per session wins, with this session's row replaced by its live cost. The line
-turns red at $150 session cost or 80% context. A missing, empty or damaged ledger drops the "today" part;
-bad stdin prints nothing harmful. Always exits 0.
+used_percentage, session_id: https://code.claude.com/docs/en/statusline). The line turns red at $150
+session cost or 80% context. Bad stdin prints nothing harmful. Always exits 0.
 `hr total` (cyan) is headroom's tokens saved since its proxy started, with its savings_percent in
 parentheses (~/.headroom/proxy_savings.json, display_session; the whole proxy, not one Claude session). `cm` (magenta) is context-mode's saving for
 this session in tokens (bytes / 4: sandbox_bytes - returned_bytes of its ctx_* calls, summed over
 ~/.context-mode/projects/*/context.db). Each is omitted when zero, missing or unreadable; a red line
 stays one colour.
-Tests: hooks/tests/test_statusline.py.
+Tests: test_statusline.py beside this file.
 """
-import datetime
 import json
 import glob
 import os
@@ -27,34 +23,6 @@ RED_PCT = 80.0
 
 def number(value):
     return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
-
-
-def local_date(ts):
-    try:
-        if isinstance(ts, (int, float)) and not isinstance(ts, bool):
-            return datetime.datetime.fromtimestamp(ts).date()
-        dt = datetime.datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
-        return (dt.astimezone() if dt.tzinfo else dt).date()
-    except (ValueError, OverflowError, OSError):
-        return None
-
-
-def today_costs(ledger):
-    """{session_id: cost_usd} for ledger rows dated today; None when the ledger cannot be read."""
-    rows = {}
-    try:
-        with open(ledger) as f:
-            for line in f:
-                try:
-                    row = json.loads(line)
-                except ValueError:
-                    continue
-                if isinstance(row, dict) and isinstance(row.get("session_id"), str):
-                    rows[row["session_id"]] = row
-    except OSError:
-        return None
-    today = datetime.date.today()
-    return {sid: number(r.get("cost_usd")) or 0.0 for sid, r in rows.items() if local_date(r.get("ts_last")) == today}
 
 
 def kilo(tokens):
@@ -126,11 +94,6 @@ def main():
             pct = f" ({hr_pct:.1f}%)" if label == "hr total" and hr_pct is not None else ""
             amount = kilo(saved) if saved >= 1000 else f"{saved / 1000:.0f}K"
             parts.append(paint(f"{label} -{amount}{pct}", code))
-    costs = today_costs(os.path.join(home, ".claude", "metrics", "ledger.jsonl"))
-    if costs is not None:
-        if isinstance(session, str) and cost is not None:
-            costs[session] = cost
-        parts.append(f"today ${sum(costs.values()):.2f}")
     if not parts:
         return
     line = " | ".join(parts)
