@@ -1304,6 +1304,18 @@
                 bash ${./tests/context-mode-suite.sh} ${plugin} ${pkgs.nodejs_24}/bin/node
                 touch "$out"
               '';
+
+          # The Claude Code statusline (home.claudeStatusline): cost, context size, context-mode and
+          # headroom savings. The tests run the packaged script against a fake HOME.
+          claude-statusline =
+            let
+              statusline = import ./modules/claude-statusline.nix { inherit pkgs; };
+            in
+            pkgs.runCommand "claude-statusline" { nativeBuildInputs = [ pkgs.python3 ]; } ''
+              python3 -m unittest discover -s ${./modules/claude-statusline} -p 'test_*.py'
+              test -x ${statusline}/bin/claude-statusline
+              touch "$out"
+            '';
         }
       );
 
