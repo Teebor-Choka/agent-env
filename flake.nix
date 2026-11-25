@@ -1353,6 +1353,17 @@
                   ]
                 );
                 zero = result (settingsWith { replaceTriggerBytes = 0; } [ ]);
+                disabled = result (
+                  settingsWith {
+                    enable = false;
+                    replaceTriggerBytes = 16384;
+                  } [ ]
+                );
+                conflict = result (
+                  settingsWith { replaceTriggerBytes = 16384; } [
+                    { config.home.claudeSettings.settings.env.CTX_REPLACE_TRIGGER_BYTES = "1"; }
+                  ]
+                );
               };
             in
             pkgs.runCommand "context-mode-option"
@@ -1371,6 +1382,8 @@
                 ok "set reaches env as a string" '{"env":{"CTX_REPLACE_TRIGGER_BYTES":"16384"}}' "$(get .set)"
                 ok "other env keys survive" '{"env":{"A":"1","CTX_REPLACE_TRIGGER_BYTES":"16384"}}' "$(get .merged)"
                 ok "zero is rejected" '"eval-error"' "$(get .zero)"
+                ok "a disabled module adds nothing" '{}' "$(get .disabled)"
+                ok "a second value for the same key is a loud conflict" '"eval-error"' "$(get .conflict)"
                 [ "$fail" = 0 ]
                 touch "$out"
               '';

@@ -34,7 +34,10 @@ in
         (`CTX_REPLACE_TRIGGER_BYTES`; the plugin's own default is 4096). The plugin has no per-tool or
         per-command exception, so this one threshold is the only way to keep results of a few KB whole,
         such as a file read before an edit. Null leaves the plugin default. A value is written to
-        `env` of settings.json, so it takes effect only with `home.claudeSettings.enable`.
+        `env` of settings.json, so it takes effect only with `home.contextMode.enable` and
+        `home.claudeSettings.enable`. The merge replaces the live `env` as a whole, so declare every env
+        key you need in `home.claudeSettings.settings.env`. Setting this back to null does not remove the
+        key from the live file: delete it there, or set a value.
       '';
     };
   };
