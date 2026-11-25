@@ -1305,6 +1305,89 @@
                 touch "$out"
               '';
 
+          # home.contextMode.replaceTriggerBytes: the option reaches settings.json's env as
+          # CTX_REPLACE_TRIGGER_BYTES, leaves other env keys alone and adds nothing when unset. Evaluated
+          # with stubs for the two options it touches (this flake has no home-manager input). A failed
+          # evaluation is reported as "eval-error", so a missing option fails an assertion, not the build.
+          context-mode-option =
+            let
+              stubs = {
+                options.home.agentPlugins.claudePlugins = lib.mkOption {
+                  type = lib.types.attrsOf lib.types.str;
+                  default = { };
+                };
+                options.home.claudeSettings.settings = lib.mkOption {
+                  type = (pkgs.formats.json { }).type;
+                  default = { };
+                };
+              };
+              settingsWith =
+                extra: more:
+                (lib.evalModules {
+                  specialArgs = { inherit pkgs; };
+                  modules = [
+                    ./modules/home/context-mode.nix
+                    stubs
+                    {
+                      config.home.contextMode = {
+                        enable = true;
+                        package = pkgs.emptyDirectory;
+                      }
+                      // extra;
+                    }
+                  ]
+                  ++ more;
+                }).config.home.claudeSettings.settings;
+              result =
+                x:
+                let
+                  t = builtins.tryEval (builtins.toJSON x);
+                in
+                if t.success then builtins.fromJSON t.value else "eval-error";
+              cases = {
+                unset = result (settingsWith { } [ ]);
+                set = result (settingsWith { replaceTriggerBytes = 16384; } [ ]);
+                merged = result (
+                  settingsWith { replaceTriggerBytes = 16384; } [
+                    { config.home.claudeSettings.settings.env.A = "1"; }
+                  ]
+                );
+                zero = result (settingsWith { replaceTriggerBytes = 0; } [ ]);
+                disabled = result (
+                  settingsWith {
+                    enable = false;
+                    replaceTriggerBytes = 16384;
+                  } [ ]
+                );
+                conflict = result (
+                  settingsWith { replaceTriggerBytes = 16384; } [
+                    { config.home.claudeSettings.settings.env.CTX_REPLACE_TRIGGER_BYTES = "1"; }
+                  ]
+                );
+              };
+            in
+            pkgs.runCommand "context-mode-option"
+              {
+                nativeBuildInputs = [
+                  pkgs.jq
+                  pkgs.coreutils
+                ];
+              }
+              ''
+                fail=0
+                ok() { if [ "$2" = "$3" ]; then echo "ok   $1"; else echo "FAIL $1: expected $2, got $3"; fail=1; fi; }
+                cases='${builtins.toJSON cases}'
+                get() { printf '%s' "$cases" | jq -c "$1"; }
+                ok "unset adds nothing to settings" '{}' "$(get .unset)"
+                ok "set reaches env as a string" '{"env":{"CTX_REPLACE_TRIGGER_BYTES":"16384"}}' "$(get .set)"
+                ok "other env keys survive" '{"env":{"A":"1","CTX_REPLACE_TRIGGER_BYTES":"16384"}}' "$(get .merged)"
+                ok "zero is rejected" '"eval-error"' "$(get .zero)"
+                ok "a disabled module adds nothing" '{}' "$(get .disabled)"
+                ok "a second value for the same key is a loud conflict" '"eval-error"' "$(get .conflict)"
+                [ "$fail" = 0 ]
+                touch "$out"
+              '';
+
           # The Claude Code statusline (home.claudeStatusline): cost, context size, context-mode and
           # headroom savings. The tests run the packaged script against a fake HOME.
           claude-statusline =
